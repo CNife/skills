@@ -1,6 +1,6 @@
 ---
 name: optimize-agents-md
-description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当用户创建、修改或重构 AGENTS.md，讨论 AI agent 指令结构、规则放置位置，或提到「渐进式披露」「模块化」「AGENTS.md 最佳实践」时，务必加载此 skill。
+description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当用户创建、修改或重构 AGENTS.md，讨论 AI agent 指令结构、规则放置位置，或提到「渐进式披露」「模块化」「AGENTS.md 最佳实践」时，务必加载此 skill。即使用户只是说「帮我写个 AGENTS.md」「优化一下这个配置文件」「拆分一下规则」，也应该使用此 skill。
 ---
 
 # AGENTS.md 编写与优化指南
@@ -69,6 +69,46 @@ description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当
 - Agent 只看到相关规则
 - 规则更易维护
 
+## 文件放置规则（重要）
+
+### 核心原则
+
+- **与特定文件夹/模块相关的 AGENTS.md** → 放在该文件夹下
+- **与整个项目相关的通用文档型 AGENTS.md** → 放在 `docs/` 目录下
+
+### 文件放置示例
+
+```
+project/
+├── AGENTS.md                 # 全局规则（< 50 行）
+├── docs/
+│   ├── AGENTS.md             # 项目级文档规则、架构说明
+│   ├── architecture.md       # 架构文档
+│   └── api-guide.md          # API 使用指南
+├── src/
+│   ├── python/
+│   │   └── AGENTS.md         # Python 模块特定规则
+│   └── frontend/
+│       └── AGENTS.md         # 前端模块特定规则
+└── .opencode/
+    └── skills/
+        └── deploy/SKILL.md   # 部署工作流（复杂任务）
+```
+
+### 判断标准
+
+| 内容类型 | 放置位置 | 示例 |
+|----------|----------|------|
+| 项目全局约束 | 根目录 AGENTS.md | 语言偏好、Git 规范、核心原则 |
+| 模块/文件夹规则 | 该文件夹下的 AGENTS.md | Python 规范、前端规范、API 模块规则 |
+| 项目级文档说明 | `docs/AGENTS.md` | 架构说明、文档编写规范、项目指南 |
+| 复杂工作流 | Skill | 部署流程、PR 创建流程 |
+
+### 为什么要区分 docs/ 和子目录 AGENTS.md？
+
+- **子目录 AGENTS.md**：Agent 进入该目录工作时自动加载，提供即时上下文
+- **docs/AGENTS.md**：项目级说明，需要显式引用或搜索才会加载，避免每次会话都加载大量文档内容
+
 ## 拆分策略
 
 ### 1. 分类规则
@@ -77,6 +117,7 @@ description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当
 |----------|----------|------|
 | **全局规则** | 根 AGENTS.md | 语言偏好、核心原则、Git 规范 |
 | **模块规则** | 子目录 AGENTS.md | Python 规范 → `python/AGENTS.md` |
+| **项目文档规则** | `docs/AGENTS.md` | 文档编写规范、架构说明 |
 | **任务规则** | Skill | 复杂工作流、特定任务指南 |
 
 ### 2. 决策树
@@ -84,27 +125,13 @@ description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当
 ```
 这条规则是否每次会话都需要？
 ├── 是 → 保留在根 AGENTS.md
-└── 否 → 是特定模块/技术栈的吗？
-    ├── 是 → 放到子目录 AGENTS.md 或 Skill
-    └── 否 → 是否是复杂工作流？
-        ├── 是 → 创建 Skill
-        └── 否 → 考虑是否真的需要这条规则
-```
-
-### 3. 文件放置
-
-```
-project/
-├── AGENTS.md              # 全局规则（< 50 行）
-├── .opencode/
-│   └── AGENTS.md          # 或放这里
-├── src/
-│   ├── python/
-│   │   └── AGENTS.md      # Python 特定规则
-│   └── frontend/
-│       └── AGENTS.md      # 前端特定规则
-└── .opencode/skills/
-    └── deploy/SKILL.md    # 部署工作流（复杂任务）
+└── 否 → 是特定模块/文件夹的吗？
+    ├── 是 → 放到该文件夹下的 AGENTS.md
+    └── 否 → 是项目级文档/架构说明吗？
+        ├── 是 → 放到 docs/AGENTS.md
+        └── 否 → 是复杂工作流吗？
+            ├── 是 → 创建 Skill
+            └── 否 → 考虑是否真的需要这条规则
 ```
 
 ## 执行步骤
@@ -115,7 +142,7 @@ project/
 1. 确认需要哪些全局规则（语言、原则、Git）
 2. 判断是否有模块级规则需要单独放置
 3. 编写精简的根 AGENTS.md
-4. 如有需要，创建子目录 AGENTS.md 或 Skill
+4. 如有需要，创建子目录 AGENTS.md、docs/AGENTS.md 或 Skill
 ```
 
 ### 2. 分析现有内容
@@ -123,7 +150,7 @@ project/
 ```
 1. 读取现有 AGENTS.md
 2. 列出所有规则模块
-3. 标记每个模块的作用域（全局/模块/任务）
+3. 标记每个模块的作用域（全局/模块/项目文档/任务）
 ```
 
 ### 3. 制定拆分计划
@@ -131,13 +158,14 @@ project/
 向用户展示：
 
 - 哪些内容保留在根目录
-- 哪些内容拆分到哪个位置
+- 哪些内容拆分到子目录 AGENTS.md
+- 哪些内容应该放到 docs/AGENTS.md
 - 每个新文件的内容概要
 
 ### 4. 执行拆分
 
 ```
-1. 创建子目录 AGENTS.md 或 Skill 文件
+1. 创建子目录 AGENTS.md、docs/AGENTS.md 或 Skill 文件
 2. 迁移相关规则（保持格式和层级）
 3. 更新根 AGENTS.md，移除已拆分内容
 4. 添加必要的引用说明（可选）
@@ -149,6 +177,7 @@ project/
 1. 检查根 AGENTS.md 是否精简
 2. 确认子目录文件内容完整
 3. 验证没有规则丢失或重复
+4. 确认 docs/AGENTS.md 包含项目级文档规则（如有）
 ```
 
 ## Skill vs AGENTS.md 选择
@@ -157,6 +186,7 @@ project/
 |------|------|------|
 | 项目约束（语言、Git） | AGENTS.md | 始终生效 |
 | 技术栈规范（Python、前端） | 子目录 AGENTS.md 或 Skill | 按需加载 |
+| 项目文档/架构说明 | `docs/AGENTS.md` | 需要时加载 |
 | 复杂工作流（部署、PR） | Skill | 渐进披露 + 可复用 |
 | 团队约定（命名、格式） | AGENTS.md | 全局约束 |
 
@@ -178,6 +208,9 @@ project/
 # 模块规则
 Python 项目 → 参考 src/python/AGENTS.md
 前端项目 → 参考 src/frontend/AGENTS.md
+
+# 文档
+项目架构 → 参考 docs/AGENTS.md
 ```
 
 ### 子目录 AGENTS.md 聚焦单一模块
@@ -193,6 +226,19 @@ Python 项目 → 参考 src/python/AGENTS.md
 - 禁止硬编码凭证
 ```
 
+### docs/AGENTS.md 用于项目级文档
+
+```markdown
+# 项目文档规范
+
+## 架构说明
+本项目采用三层架构，详见 architecture.md。
+
+## API 文档
+- REST API 规范 → api-guide.md
+- GraphQL Schema → schema.graphql
+```
+
 ### Skill 用于复杂任务
 
 当规则包含多步骤工作流、需要渐进披露大量内容时，创建 Skill 而非 AGENTS.md。
@@ -201,7 +247,9 @@ Python 项目 → 参考 src/python/AGENTS.md
 
 | 错误 | 后果 | 修正 |
 |------|------|------|
-| 根 AGENTS.md 过长 | Context 浪费 | 拆分到子目录或 Skill |
+| 根 AGENTS.md 过长 | Context 浪费 | 拆分到子目录、docs/ 或 Skill |
 | 规则重复定义 | Agent 困惑 | 每条规则只出现一次 |
 | 拆分粒度过细 | 维护负担 | 合并相关规则 |
 | 忘记删除原内容 | 规则冲突 | 拆分后必须删除原文 |
+| 模块规则放在根目录 | 不相关规则被加载 | 移到对应子目录 |
+| 项目文档规则放在根目录 | Context 膨胀 | 移到 docs/AGENTS.md |
