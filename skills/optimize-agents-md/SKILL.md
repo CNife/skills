@@ -1,5 +1,5 @@
 ---
-name: split-agents-md
+name: optimize-agents-md
 description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当用户创建、修改或重构 AGENTS.md，讨论 AI agent 指令结构、规则放置位置，或提到「渐进式披露」「模块化」「AGENTS.md 最佳实践」时，务必加载此 skill。
 ---
 

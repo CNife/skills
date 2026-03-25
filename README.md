@@ -16,7 +16,7 @@ bunx skills add CNife/skills@python
 
 | Skill | 描述 |
 |-------|------|
-| [split-agents-md](./skills/split-agents-md) | 拆分过于庞大的 AGENTS.md，遵循渐进式披露原则 |
+| [optimize-agents-md](./skills/optimize-agents-md) | AGENTS.md 编写与优化指南，遵循渐进式披露原则 |
 
 ## 开发
 
