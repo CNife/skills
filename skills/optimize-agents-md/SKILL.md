@@ -71,11 +71,17 @@ description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当
 
 ## 文件放置规则（重要）
 
+### 安全边界（必须遵守）
+
+- **禁止**：AI agent **不得**直接创建/编辑/删除任何“用户全局”的 `AGENTS.md`（例如 `~/.agents/AGENTS.md`、`~/.config/**/AGENTS.md`、`~/.config/opencode/AGENTS.md` 等）。
+- **允许**：当用户需要全局规则时，AI agent 只能**给出建议与完整内容草稿**（或 diff 文本），并明确说明应由用户自行手动应用到其全局文件中。
+- **始终优先**：默认只在**当前仓库/项目目录内**创建或修改 `AGENTS.md`（项目根、子目录、`docs/`），避免影响其他项目与环境。
+
 ### 核心原则
 
 - **与特定文件夹/模块相关的 AGENTS.md** → 放在该文件夹下
 - **与整个项目相关的通用文档型 AGENTS.md** → 放在 `docs/` 目录下
-- **用户全局规则** → 放在 `~/.config/opencode/AGENTS.md`（适用于所有项目）
+- **用户全局规则** → 建议放在 `~/.config/opencode/AGENTS.md`（适用于所有项目；但**agent 不得直接修改该文件**）
 
 ### 层级结构
 
@@ -149,7 +155,7 @@ project/
 
 | 内容类型 | 放置位置 | 示例 |
 |----------|----------|------|
-| 用户全局约束 | `~/.config/opencode/AGENTS.md` | 语言偏好、Git 规范、核心原则 |
+| 用户全局约束 | `~/.config/opencode/AGENTS.md`（仅建议/草稿，用户手动应用） | 语言偏好、Git 规范、核心原则 |
 | 项目全局约束 | 项目根目录 AGENTS.md | 项目架构、团队约定、入口说明 |
 | 模块/文件夹规则 | 该文件夹下的 AGENTS.md | Python 规范、前端规范、API 模块规则 |
 | 项目级文档说明 | `docs/AGENTS.md` | 架构说明、文档编写规范、项目指南 |
@@ -171,7 +177,7 @@ project/
 
 | 规则类型 | 放置位置 | 示例 |
 |----------|----------|------|
-| **用户全局规则** | `~/.config/opencode/AGENTS.md` | 语言偏好、Git 规范、核心原则 |
+| **用户全局规则** | `~/.config/opencode/AGENTS.md`（仅建议/草稿，用户手动应用） | 语言偏好、Git 规范、核心原则 |
 | **项目全局规则** | 项目根 AGENTS.md | 项目架构、团队约定、入口说明 |
 | **模块规则** | 子目录 AGENTS.md | Python 规范 → `python/AGENTS.md` |
 | **项目文档规则** | `docs/AGENTS.md` | 文档编写规范、架构说明 |
@@ -182,7 +188,7 @@ project/
 ```
 这条规则是否每次会话都需要？
 ├── 是 → 是所有项目都需要的吗？
-│   ├── 是 → 放到 ~/.config/opencode/AGENTS.md（用户全局）
+│   ├── 是 → 建议放到 ~/.config/opencode/AGENTS.md（用户全局；agent 只提供草稿，用户手动应用）
 │   └── 否 → 放到项目根目录 AGENTS.md
 └── 否 → 是特定模块/文件夹的吗？
     ├── 是 → 放到该文件夹下的 AGENTS.md
@@ -243,7 +249,7 @@ project/
 
 | 场景 | 推荐 | 原因 |
 |------|------|------|
-| 跨项目个人偏好（语言、Git） | `~/.config/opencode/AGENTS.md` | 所有项目共享 |
+| 跨项目个人偏好（语言、Git） | `~/.config/opencode/AGENTS.md`（agent 仅提供草稿，用户手动修改） | 所有项目共享 |
 | 项目约束（架构、团队约定） | 项目 AGENTS.md | 项目级生效 |
 | 技术栈规范（Python、前端） | 子目录 AGENTS.md 或 Skill | 按需加载 |
 | 项目文档/架构说明 | `docs/AGENTS.md` | 需要时加载 |
