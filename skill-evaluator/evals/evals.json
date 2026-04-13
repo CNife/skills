@@ -1,0 +1,26 @@
+{
+  "skill_name": "skill-evaluator",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "single-skill-security-audit",
+      "prompt": "帮我评估一下 markitdown 这个 skill 的安全性，看看能不能放心使用",
+      "expected_output": "读取 markitdown skill 的 SKILL.md 源码，按安全检查清单逐项审计，给出安全评分和风险等级，列出发现的安全问题，最后给出是否推荐使用的建议",
+      "files": []
+    },
+    {
+      "id": 2,
+      "eval_name": "multi-skill-comparison",
+      "prompt": "找一下 pdf 转 markdown 的 skills，对比下哪个好用",
+      "expected_output": "搜索多个候选 skills，收集安装量/stars/更新频率/安全审计结果等信息，生成对比表格，按安全和功能两个维度给出推荐，提供安装命令",
+      "files": []
+    },
+    {
+      "id": 3,
+      "eval_name": "safe-skill-recommendation",
+      "prompt": "有没有安全的 skill 可以用来读取 PDF 文件？帮我装一个",
+      "expected_output": "搜索相关 skills，重点进行安全评估，优先考虑通过 Agent Trust Hub 的选项，给出安全优先的推荐，用户确认后执行安装命令",
+      "files": []
+    }
+  ]
+}
