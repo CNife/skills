@@ -1,40 +1,47 @@
 ---
 name: skill-evaluator
 description: >
-  Evaluate, compare, and recommend AI agent skills (Claude Code skills, MCP plugins, etc.).
+  Evaluate, compare, recommend, discover, and install AI agent skills.
   Use this skill whenever the user wants to find, assess, or choose skills for their AI agent workflow.
   Triggers include: "评估 skill", "找 skill", "对比 skill", "安装 skill", "skill 安全",
   "搜索 skill", "推荐 skill", "skill 哪个好用", "哪个 skill 更好", "safe skill",
-  "evaluate skill", "compare skills", or any request involving skill discovery, security assessment,
-  or installation decision. Make sure to use this skill whenever the user mentions evaluating,
-  comparing, or choosing skills, even if they don't explicitly say "evaluate".
+  "evaluate skill", "compare skills", "install skill", "找个技能", "安装技能",
+  "装个技能", "有没有...的技能", "给所有 agent 装技能", "给 Claude Code 装技能",
+  "Cursor 有没有...的技能", "不同 agent 的技能通用吗", or any request involving skill discovery,
+  security assessment, installation, or cross-agent compatibility.
+  Make sure to use this skill whenever the user mentions evaluating, comparing, choosing,
+  finding, or installing skills, even if they don't explicitly say "evaluate".
 ---
 
 # Skill Evaluator
 
-系统性地评估、对比和推荐 AI agent skills 的完整流程指南。
+系统性地评估、对比、推荐、搜索和安装 AI agent skills 的完整流程指南。
 
 ## 核心流程
 
-整个评估流程分为四个阶段，按顺序执行：
+整个流程分为四个阶段，按顺序执行：
 
 ```
-搜索候选 → 信息收集 → 安全评估 → 对比推荐
+搜索候选 → 信息收集 → 安全评估 → 对比推荐与安装
 ```
 
 ---
 
 ## 阶段 1：搜索候选
 
-### 1.1 关键词搜索
+### 1.1 多源并行搜索
 
-使用 Skills CLI 搜索相关关键词：
+**同时发起搜索，不等彼此**，以最快找到候选：
 
-```bash
-npx skills find [关键词]
-```
-
-例如：`npx skills find markitdown`、`npx skills find pdf`
+- **Skills.sh**（全球生态，社区验证多，支持多 Agent 自动安装）：
+  ```bash
+  bunx skills find [关键词]
+  ```
+- **SkillHub**（中国优化，速度快，中文技能多）：
+  ```bash
+  skillhub search [关键词]
+  ```
+- **ClawHub**：仅当 SkillHub 无结果或 CLI 不可用时作为后备。
 
 ### 1.2 查看 Leaderboard
 
@@ -45,6 +52,7 @@ npx skills find [关键词]
 对每个候选 skill，记录以下信息：
 - **skill 名称**（如 `owner/repo@skill-name`）
 - **安装量**（反映社区信任度）
+- **来源**（skills.sh / skillhub / clawhub）
 - **来源仓库**（GitHub repo）
 - **skills.sh 详情页面 URL**
 
@@ -200,7 +208,7 @@ skills/{name}/SKILL.md              # 传统结构
 
 ---
 
-## 阶段 4：对比与推荐
+## 阶段 4：对比推荐与安装
 
 ### 4.1 生成综合对比表
 
@@ -235,17 +243,76 @@ skills/{name}/SKILL.md              # 传统结构
 
 ### 4.3 执行安装
 
-用户确认后执行安装：
+用户确认后，根据技能来源选择正确的安装命令：
 
+**Skills.sh 技能：**
 ```bash
-npx skills add {owner}/{repo}@{skill-name} -g -y
+bunx skills add {owner}/{repo}@{skill-name} -g -y
+```
+这会安装到 `~/.agents/skills/` 下。其中 `-g` 表示全局安装（用户级别而非项目级别），`-y` 跳过确认提示。
+
+安装完成后，如果当前 Agent 是 Hermes，需要额外创建软链接：
+```bash
+ln -s ~/.agents/skills/{skill-name} ~/.hermes/skills/{skill-name}
 ```
 
-### 4.4 安装后验证
+**SkillHub 技能：**
+```bash
+skillhub --dir ~/.hermes/skills/ install {slug}
+```
+注意 `--dir` 是全局选项，必须放在子命令 `install` 之前。`skillhub search` 不需要 `--dir`（搜索不写入文件）。加上 `--dir ~/.hermes/skills/` 才能让 Hermes 直接发现技能，无需手动软链接。
+
+**ClawHub 技能：**
+```bash
+clawhub install {slug}
+```
+安装后需根据 Agent 兼容性流程处理路径问题。
+
+### 4.4 多 Agent 兼容处理
+
+`bunx skills add` 内置 `--agent` 参数，支持 40+ 个 Agent（claude-code、opencode、codex、cursor、cline、github-copilot、windsurf、roo、trae、qwen-code 等），自动将技能安装到各 Agent 的专属目录。
+
+**安装策略：**
+
+1. **识别当前 Agent**：从系统提示词或运行上下文中识别当前正在运行的 Agent（如 Hermes、Claude Code 等），无需额外执行检测命令。
+
+2. **默认安装到当前 Agent**：
+   - 如果用户通过 Hermes 发起请求，默认安装到 Hermes（Skills.sh 技能需额外软链接到 `~/.hermes/skills/`）
+   - 如果用户通过其他 Agent 发起，默认安装到该 Agent 的目录
+
+3. **检测其他可用 Agent**（用于询问扩展）：
+   - 可选：执行 `ls ~/.agents/skills/` 查看已安装的 Agent 子目录，列出可供扩展的目标
+
+4. **询问是否扩展到其它 Agent**：
+   - 安装完成后，列出检测到的其它可用 Agent
+   - 询问用户："检测到你还安装了 [Agent A, Agent B]，是否需要安装到这些 Agent？"
+   - 用户确认后，使用 `bunx skills add ... --agent <agent-name>` 扩展到指定 Agent
+   - 避免使用 `--all`，它会创建 40+ 个目录，其中很多用户从未安装过
+
+**Agent 发现路径参考：**
+
+| Agent 类型 | 目录 | Skills.sh 自动处理 |
+|-----------|------|-------------------|
+| Claude Code / Codex / OpenCode | `~/.agents/skills/<agent>/` | 是 |
+| Cursor | `~/.agents/skills/cursor/` | 是 |
+| Cline / Roo | `~/.agents/skills/cline/`, `~/.agents/skills/roo/` | 是 |
+| GitHub Copilot | `~/.agents/skills/github-copilot/` | 是 |
+| Windsurf / Trae / Qwen-Code 等 30+ 个 | `~/.agents/skills/<agent>/` | 是 |
+| **Hermes** | `~/.hermes/skills/` | **否，需手动软链接** |
+
+**单一真相源原则：**
+- Skills.sh 安装以 `~/.agents/skills/` 为主目录
+- Hermes 通过软链接引用，避免多副本不同步：
+  ```bash
+  ln -s ~/.agents/skills/<skill-name> ~/.hermes/skills/<skill-name>
+  ```
+- SkillHub 安装以 `~/.hermes/skills/` 为主目录（反向链接按需创建）
+
+### 4.5 安装后验证
 
 安装完成后执行以下验证：
 
-1. **检查安装路径**：确认 skill 文件存在于 `~/.agents/skills/{skill-name}/`
+1. **检查安装路径**：确认 skill 文件存在于目标 Agent 的技能目录中
 2. **读取已安装 SKILL.md**：确认内容与预期一致
 3. **确认安全结果**：安全审计结果与评估时一致
 4. **提醒用户**：审查 SKILL.md 内容后再使用

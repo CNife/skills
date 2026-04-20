@@ -9,7 +9,7 @@
 ### 执行搜索
 
 ```bash
-npx skills find markitdown
+bunx skills find markitdown
 ```
 
 ### 搜索结果
@@ -175,10 +175,10 @@ https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdo
 
 ```bash
 # 安全优先
-npx skills add rysweet/amplihack@markitdown -g -y
+bunx skills add rysweet/amplihack@markitdown -g -y
 
 # 功能优先
-npx skills add davila7/claude-code-templates@markitdown -g -y
+bunx skills add davila7/claude-code-templates@markitdown -g -y
 ```
 
 ### 4.4 安装后验证
