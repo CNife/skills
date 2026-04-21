@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/cnife/.config/opencode/commands/**)"
+    ]
+  },
+  "$version": 3
+}

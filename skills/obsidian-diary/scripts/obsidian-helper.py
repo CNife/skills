@@ -3,7 +3,6 @@
 
 用法:
     python3 scripts/obsidian-helper.py --vault work --action context
-    python3 scripts/obsidian-helper.py --vault personal --action append --content "内容"
     python3 scripts/obsidian-helper.py --vault work --action locate
     python3 scripts/obsidian-helper.py --vault work --action create
     python3 scripts/obsidian-helper.py --vault work --action todos
@@ -341,35 +340,6 @@ def action_context(vault_name: str, days: int = 14):
         print("(empty - needs creation)")
 
 
-def action_append(vault_name: str, content: str | None = None, use_stdin: bool = False):
-    cfg = VAULTS[vault_name]
-    paths = compute_paths(cfg)
-    diary_path = paths["diary_path"]
-
-    if not os.path.exists(diary_path):
-        os.makedirs(paths["month_dir"], exist_ok=True)
-        if os.path.exists(paths["template_path"]):
-            shutil.copy2(paths["template_path"], diary_path)
-        else:
-            with open(diary_path, "w", encoding="utf-8") as f:
-                f.write("# 待办事项\n```tasks\nnot done\n```\n")
-
-    if use_stdin:
-        content = sys.stdin.read()
-    elif content is None:
-        print("ERROR: No content provided. Use --content or --stdin", file=sys.stderr)
-        sys.exit(1)
-
-    with open(diary_path, "r", encoding="utf-8") as f:
-        existing = f.read().rstrip("\n")
-
-    with open(diary_path, "w", encoding="utf-8") as f:
-        f.write(existing + "\n\n" + content.strip() + "\n")
-
-    print(f"APPENDED=true")
-    print(f"PATH={diary_path}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Obsidian 日记辅助脚本")
     parser.add_argument(
@@ -380,7 +350,7 @@ def main():
     )
     parser.add_argument(
         "--action",
-        choices=["locate", "create", "todos", "recent", "read", "context", "append"],
+        choices=["locate", "create", "todos", "recent", "read", "context"],
         required=True,
         help="操作类型",
     )
@@ -389,8 +359,6 @@ def main():
     parser.add_argument(
         "--limit", type=int, default=0, help="最大返回数量（用于 recent，0=不限制）"
     )
-    parser.add_argument("--content", type=str, default=None, help="追加内容（用于 append）")
-    parser.add_argument("--stdin", action="store_true", help="从 stdin 读取内容（用于 append）")
 
     args = parser.parse_args()
 
@@ -401,7 +369,6 @@ def main():
         "recent": lambda: action_recent(args.vault, args.days, args.limit),
         "read": lambda: action_read(args.vault, args.file),
         "context": lambda: action_context(args.vault, args.days),
-        "append": lambda: action_append(args.vault, args.content, args.stdin),
     }
 
     actions[args.action]()

@@ -251,10 +251,7 @@ bunx skills add {owner}/{repo}@{skill-name} -g -y
 ```
 这会安装到 `~/.agents/skills/` 下。其中 `-g` 表示全局安装（用户级别而非项目级别），`-y` 跳过确认提示。
 
-安装完成后，如果当前 Agent 是 Hermes，需要额外创建软链接：
-```bash
-ln -s ~/.agents/skills/{skill-name} ~/.hermes/skills/{skill-name}
-```
+Hermes 通过 `skills.external_dirs` 配置自动发现 `~/.agents/skills/` 中的技能，无需额外操作。
 
 **SkillHub 技能：**
 ```bash
@@ -277,7 +274,7 @@ clawhub install {slug}
 1. **识别当前 Agent**：从系统提示词或运行上下文中识别当前正在运行的 Agent（如 Hermes、Claude Code 等），无需额外执行检测命令。
 
 2. **默认安装到当前 Agent**：
-   - 如果用户通过 Hermes 发起请求，默认安装到 Hermes（Skills.sh 技能需额外软链接到 `~/.hermes/skills/`）
+   - 如果用户通过 Hermes 发起请求，默认安装到 `~/.agents/skills/`（Hermes 通过 external_dirs 自动发现）
    - 如果用户通过其他 Agent 发起，默认安装到该 Agent 的目录
 
 3. **检测其他可用 Agent**（用于询问扩展）：
@@ -298,15 +295,12 @@ clawhub install {slug}
 | Cline / Roo | `~/.agents/skills/cline/`, `~/.agents/skills/roo/` | 是 |
 | GitHub Copilot | `~/.agents/skills/github-copilot/` | 是 |
 | Windsurf / Trae / Qwen-Code 等 30+ 个 | `~/.agents/skills/<agent>/` | 是 |
-| **Hermes** | `~/.hermes/skills/` | **否，需手动软链接** |
+| **Hermes** | `~/.agents/skills/`（通过 external_dirs 扫描） | **是** |
 
 **单一真相源原则：**
 - Skills.sh 安装以 `~/.agents/skills/` 为主目录
-- Hermes 通过软链接引用，避免多副本不同步：
-  ```bash
-  ln -s ~/.agents/skills/<skill-name> ~/.hermes/skills/<skill-name>
-  ```
-- SkillHub 安装以 `~/.hermes/skills/` 为主目录（反向链接按需创建）
+- Hermes 通过 `skills.external_dirs` 配置扫描 `~/.agents/skills/`，无需软链接或副本
+- SkillHub 安装以 `~/.hermes/skills/` 为主目录
 
 ### 4.5 安装后验证
 

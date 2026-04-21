@@ -25,8 +25,7 @@ python3 scripts/obsidian-helper.py --vault <work|personal> --action <action>
 ```
 
 可用 action：
-- `context` — 一次调用返回所有上下文（路径 + 规则 + 待办 + 近期摘要 + 今日日记）
-- `append` — 追加内容到今日日记末尾（`--content "文本"` 或 `--stdin`）
+- `context` — 一次调用返回所有上下文（路径 + 规则 + 待办 + 近期摘要 + 今日日记大纲）
 - `locate` — 获取今日日记路径、模板路径、存在状态
 - `create` — 确保今日日记存在，不存在则从模板创建
 - `todos` — 扫描近期日志，列出未完成待办
@@ -68,12 +67,25 @@ python3 scripts/obsidian-helper.py --vault <变体> --action context
 
 #### 2b. 写入方式
 
-**追加新内容**（最常见）：用 `append` action
-```bash
-echo 'Markdown 内容' | python3 scripts/obsidian-helper.py --vault <变体> --action append --stdin
+**使用 Edit 工具直接编辑日记文件**：
+
+1. 根据 `context` 输出的 `## 大纲` 判断新内容应归属的章节
+2. 找到该章节末尾的合适插入位置（通常是最后一个二级标题段落的末尾）
+3. 用 Edit 工具插入新内容，保持章节结构完整
+
+示例：
+```
+# context 输出显示：
+## 大纲
+6: # Genos Reg Server
+8: ## 生产环境故障排查与修复
+17: ## IGV 可视化 Access forbidden 修复
+24: # OneReason Backend
+
+# 新内容属于 Genos Reg Server，应在第 17-23 行之间插入
 ```
 
-**更新已有段落**（补充、修正、状态变更）：用 Read + Edit 工具直接编辑日记文件
+**更新已有段落**（补充、修正、状态变更）：
 - 只修改与本次会话相关的段落
 - 不修改无关内容
 - 合并重复而非追加

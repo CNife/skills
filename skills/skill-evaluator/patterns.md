@@ -192,8 +192,7 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 - **推荐**：安装前先识别当前运行的 Agent（从系统提示词中获取），默认只安装到当前 Agent 的目录
 - **推荐**：执行 `ls ~/.agents/skills/` 检测其他可用 Agent 目录，安装后询问用户是否需要扩展到那些 Agent
 - **陷阱**：使用 `--all` 会创建 40+ 个目录，其中很多用户从未安装过对应 Agent → 浪费磁盘空间且难以管理
-- **陷阱**：忘记为 Hermes 做软链接（skills.sh 不原生支持 hermes）→ Skills.sh 技能安装后必须补充执行 `ln -s ~/.agents/skills/<name> ~/.hermes/skills/<name>`
-- **陷阱**：同一技能在多个目录复制导致版本不同步 → 以 `~/.agents/skills/` 为主目录（Skills.sh 安装），Hermes 通过软链接引用
+- **陷阱**：同一技能在多个目录复制导致版本不同步 → 以 `~/.agents/skills/` 为主目录（Skills.sh 安装），Hermes 通过 `external_dirs` 自动扫描
 - **陷阱**：`skillhub search` 不支持 `--dir` 参数，只有 `skillhub install` 才需要 `--dir`
 - **最佳实践**：检测当前 Agent → 默认安装到当前 Agent → 询问是否扩展到其他 Agent → 按需执行
 
@@ -201,7 +200,7 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 
 | 来源 | 搜索 | 安装 | 备注 |
 |------|------|------|------|
-| Skills.sh | `bunx skills find <query>` | `bunx skills add <owner/repo@skill> -g -y` | 需额外软链接给 Hermes |
+| Skills.sh | `bunx skills find <query>` | `bunx skills add <owner/repo@skill> -g -y` | Hermes 通过 external_dirs 自动发现 |
 | SkillHub | `skillhub search <query>` | `skillhub --dir ~/.hermes/skills/ install <slug>` | `--dir` 是全局选项，须在子命令之前 |
 | ClawHub | `clawhub search <query>` | `clawhub install <slug>` | 需手动处理路径 |
 
