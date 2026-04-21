@@ -17,6 +17,7 @@ bunx skills add CNife/skills@python
 | Skill | 描述 |
 |-------|------|
 | [optimize-agents-md](./skills/optimize-agents-md) | AGENTS.md 编写与优化指南，遵循渐进式披露原则 |
+| [git-master](./skills/git-master) | Git 操作专家：原子提交、rebase/squash、历史搜索（blame/bisect/log -S）。提取自 [oh-my-openagent](https://github.com/CNife/oh-my-openagent) 项目 |
 
 ## 开发
 
