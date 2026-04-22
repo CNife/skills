@@ -82,8 +82,31 @@ uv run audit-hermes-agent-skills.py --execute
 ### 外部/独立技能
 直接删除目录，不影响 Hermes 核心功能。
 
-### 内置技能
-不删除文件（Hermes 升级会恢复），添加到 `~/.hermes/config.yaml` 的 `skills.disabled` 列表。Hermes 加载技能时会跳过这些技能，需要时可从 config 移除重新启用。
+### 内置技能（builtin）— 分两类，清理策略不同！
+
+#### Bundled skills（`hermes-agent/skills/`）
+Hermes 每次启动时通过 `tools/skills_sync.py` 自动同步到 `~/.hermes/skills/`。
+- **不要删除目录**，Hermes 升级/重启后会自动恢复
+- 正确做法：添加到 `~/.hermes/config.yaml` 的 `skills.disabled` 列表
+- 需要时可从 config 移除重新启用
+
+#### Optional skills（`hermes-agent/optional-skills/`）
+官方可选技能，需通过 `hermes skills install` 手动安装。
+- **`sync_skills()` 不会同步这些技能**（它只扫描 `skills/` 目录，第 49 行：`Path(__file__).parent.parent / "skills"`）
+- 删除 `~/.hermes/skills/` 下的 optional skills 副本后**不会自动恢复**
+- 可以直接删除，需要时用 `hermes skills install` 重新安装
+
+> ⚠️ 关键区别：审计脚本必须同时检查 `skills/` 和 `optional-skills/` 两个目录才能正确识别 builtin 副本，否则会误判为 standalone。
+
+## 脚本检测逻辑
+
+脚本通过以下规则判断技能来源（优先级从高到低）：
+
+1. **external**：在 `~/.agents/skills/` 下存在 → 全局共享（所有 Agent 共用）
+2. **builtin**：在 `~/.hermes/skills/` 下，同时 `hermes-agent/skills/` 或 `hermes-agent/optional-skills/` 递归目录中存在同名 SKILL.md → 内置副本
+3. **standalone**：仅在 `~/.hermes/skills/` 下存在 → 独立安装
+
+> 注意：MLOps 等技能嵌套在二级子目录下（如 `mlops/training/axolotl/`），必须使用 `rglob("SKILL.md")` 递归搜索，不能只用一层 `iterdir()`。
 
 ## 备份恢复
 

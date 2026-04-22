@@ -37,6 +37,7 @@ SKILLS_DIR = HERMES_HOME / "skills"
 CONFIG_PATH = HERMES_HOME / "config.yaml"
 AGENTS_SKILLS = Path.home() / ".agents" / "skills"
 BUILTIN_SKILLS = HERMES_HOME / "hermes-agent" / "skills"
+BUILTIN_OPTIONAL_SKILLS = HERMES_HOME / "hermes-agent" / "optional-skills"
 BACKUP_DIR = SKILLS_DIR / ".audit-backups"
 
 # ─── 时间窗口定义 ────────────────────────────────────────────────────────────
@@ -84,9 +85,16 @@ def scan_all_skills() -> dict[str, dict]:
 
             source = default_source
             if default_source == "standalone":
-                for cat in BUILTIN_SKILLS.iterdir():
-                    if cat.is_dir() and (cat / name / "SKILL.md").exists():
-                        source = "builtin"
+                for base_dir in (BUILTIN_SKILLS, BUILTIN_OPTIONAL_SKILLS):
+                    if not base_dir.exists():
+                        continue
+                    for builtin_skill_md in base_dir.rglob("SKILL.md"):
+                        if any(part in _EXCLUDED for part in builtin_skill_md.parts):
+                            continue
+                        if builtin_skill_md.parent.name == name:
+                            source = "builtin"
+                            break
+                    if source == "builtin":
                         break
 
             skills[name] = {
