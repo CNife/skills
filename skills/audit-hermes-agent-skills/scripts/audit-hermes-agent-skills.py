@@ -327,20 +327,42 @@ def generate_report(
         lines.append("</details>")
         lines.append("")
 
-    # 零调用技能
+    # 零调用技能（按来源细分）
     zero_skills = [s for s in all_skills_data if s["total_calls"] == 0]
-    zero_external = [s for s in zero_skills if s["source"] in ("external", "standalone")]
+    # standalone: 仅在 ~/.hermes/skills/ 中，仅 Hermes 使用
+    zero_standalone = [s for s in zero_skills if s["source"] == "standalone"]
+    # external: 在 ~/.agents/skills/ 中，全局共享（所有 Agent 共用）
+    zero_external = [s for s in zero_skills if s["source"] == "external"]
     zero_builtin = [s for s in zero_skills if s["source"] == "builtin"]
 
-    if zero_external:
-        lines.append("## 🗑️ 建议删除（external/standalone + 零调用）")
+    # standalone 零调用：直接建议删除
+    if zero_standalone:
+        lines.append("## 🗑️ 建议删除（standalone + 零调用）")
         lines.append("")
-        lines.append("| # | 技能 | 来源 | 安装时间 | 分类 |")
-        lines.append("|---|------|------|---------|------|")
+        lines.append("这些技能仅在 `~/.hermes/skills/` 中，仅 Hermes 使用，删除不影响其他 Agent。")
+        lines.append("")
+        lines.append("| # | 技能 | 安装时间 | 分类 |")
+        lines.append("|---|------|---------|------|")
+        for i, s in enumerate(zero_standalone, 1):
+            lines.append(
+                f"| {i} | {s['name']} | "
+                f"{s['installed_at']} | {s['category'] or '-'} |"
+            )
+        lines.append("")
+
+    # external 零调用：全局共享，删除需谨慎
+    if zero_external:
+        lines.append("## 🔗 全局共享技能（external + 零调用）")
+        lines.append("")
+        lines.append("> ⚠️ 这些技能在 `~/.agents/skills/` 下，所有 Agent（Claude Code、OpenCode、Cursor 等）共用。")
+        lines.append("> 即使 Hermes 零调用，其他 Agent 可能正在使用。删除前请确认不影响其他 Agent。")
+        lines.append("")
+        lines.append("| # | 技能 | 安装时间 | 说明 |")
+        lines.append("|---|------|---------|------|")
         for i, s in enumerate(zero_external, 1):
             lines.append(
-                f"| {i} | {s['name']} | {s['source']} | "
-                f"{s['installed_at']} | {s['category'] or '-'} |"
+                f"| {i} | {s['name']} | "
+                f"{s['installed_at']} | 全局共享，删除需确认 |"
             )
         lines.append("")
 
@@ -382,9 +404,9 @@ def generate_report(
 
     lines.append("## 📝 清理操作汇总")
     lines.append("")
-    lines.append(f"- **删除外部/独立技能**: {len(zero_external)} 个")
-    lines.append(f"- **禁用内置技能**: {len(zero_builtin)} 个")
-    lines.append(f"- **总计清理**: {len(zero_skills)} 个技能")
+    lines.append(f"- **删除 standalone 技能**: {len(zero_standalone)} 个（仅 Hermes 使用）")
+    lines.append(f"- **禁用内置技能**: {len(zero_builtin)} 个（通过 config.yaml disabled）")
+    lines.append(f"- **全局共享技能**: {len(zero_external)} 个（需确认不影响其他 Agent）")
     lines.append("")
 
     json_data = {
@@ -395,7 +417,8 @@ def generate_report(
             {k: v for k, v in s.items() if k != "timestamps"}
             for s in all_skills_data
         ],
-        "delete_candidates": [s["name"] for s in zero_external],
+        "delete_candidates": [s["name"] for s in zero_standalone],
+        "shared_external": [s["name"] for s in zero_external],
         "disable_candidates": [s["name"] for s in zero_builtin],
     }
 
@@ -548,8 +571,9 @@ def main():
     print(f"  总技能数: {json_data['total_skills']}")
     print(f"  有调用记录: {len(call_stats)}")
     print(f"  零调用: {json_data['level_counts'].get('❌ 零调用', 0)}")
-    print(f"  建议删除: {len(json_data['delete_candidates'])}")
-    print(f"  建议禁用: {len(json_data['disable_candidates'])}")
+    print(f"  建议删除 (standalone): {len(json_data['delete_candidates'])}")
+    print(f"  建议禁用 (builtin): {len(json_data['disable_candidates'])}")
+    print(f"  全局共享 (external): {len(json_data['shared_external'])}")
     print("=" * 60)
 
     if args.dry_run:
