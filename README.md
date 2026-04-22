@@ -20,7 +20,7 @@ bunx skills add CNife/skills@python
 | [obsidian-diary](./skills/obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
 | [optimize-agents-md](./skills/optimize-agents-md) | AGENTS.md 编写与优化指南，遵循渐进式披露原则 |
 | [report-generator](./skills/report-generator) | 生成带品牌样式的可分享 HTML 报告，支持暗色主题 |
-| [skill-audit](./skills/skill-audit) | 审计 Agent 技能使用频率，基于指数衰减算法计算热度，安全清理未使用技能 |
+| [audit-hermes-agent-skills](./skills/audit-hermes-agent-skills) | 审计 Hermes Agent 技能使用频率，基于指数衰减算法计算热度，安全清理未使用技能 |
 | [skill-evaluator](./skills/skill-evaluator) | 评估、比较、推荐、发现和安装 AI Agent 技能 |
 | [stock-daily-review](./skills/stock-daily-review) | A股每日复盘技能 |
 
