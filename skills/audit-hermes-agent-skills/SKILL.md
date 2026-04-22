@@ -2,22 +2,27 @@
 name: audit-hermes-agent-skills
 description: >
   Audit installed Hermes Agent skills for usage frequency and heat analysis.
-  Scans all installed skills in ~/.hermes/skills/, queries state.db for
+  Uses hermes internal API (_find_all_skills, _read_manifest, HubLockFile) as
+  authoritative source for skill classification (hub/builtin/local/external),
+  combined with filesystem scanning for directory paths. Queries state.db for
   skill_view/skill_manage calls, calculates time-decayed heat scores using
-  exponential decay (Reddit/HN style), identifies skill sources (builtin/
-  external/standalone), and generates cleanup recommendations with backup.
-  Use when the user asks about Hermes skill usage statistics, wants to clean
-  up unused Hermes skills, needs to disable low-usage skills, or mentions
-  "技能审计", "清理技能", "不用的技能", "哪些技能可以删", "skill audit",
-  "unused skills", "cleanup skills", "remove skills", "skill heat", "技能热度",
-  "技能使用频率", "技能调用历史", "audit hermes skills". This skill is specific
-  to Hermes Agent — do not use for other agents. Make sure to load this skill
-  whenever Hermes skill management, cleanup, or usage analysis is mentioned.
+  exponential decay (Reddit/HN style), and generates cleanup recommendations
+  with automatic backup. Smart filtering: already-disabled skills are not
+  re-suggested for cleanup. Use when the user asks about Hermes skill usage
+  statistics, wants to clean up unused Hermes skills, needs to disable low-usage
+  skills, or mentions "技能审计", "清理技能", "不用的技能", "哪些技能可以删",
+  "skill audit", "unused skills", "cleanup skills", "remove skills", "skill heat",
+  "技能热度", "技能使用频率", "技能调用历史", "audit hermes skills". This skill
+  is specific to Hermes Agent — do not use for other agents. Make sure to load
+  this skill whenever Hermes skill management, cleanup, or usage analysis is
+  mentioned.
 ---
 
 # Audit Hermes Agent Skills
 
 审计 Hermes Agent 已安装技能的使用频率，识别长期不使用的技能并安全清理。
+
+通过 hermes 内部 API（`_find_all_skills`、`_read_manifest`、`HubLockFile`）获取权威的技能来源分类（hub/builtin/local/external），结合文件系统扫描定位实际目录路径。
 
 ## 核心原理
 
@@ -79,34 +84,58 @@ uv run audit-hermes-agent-skills.py --execute
 
 ## 清理策略
 
-### 外部/独立技能
-直接删除目录，不影响 Hermes 核心功能。
+### 本地技能（local）
+直接删除目录。
 
-### 内置技能（builtin）— 分两类，清理策略不同！
+### Hub 技能（hub）
+通过 `hermes skills uninstall <name>` 卸载，同时清理 Hub 锁定文件记录。
 
-#### Bundled skills（`hermes-agent/skills/`）
-Hermes 每次启动时通过 `tools/skills_sync.py` 自动同步到 `~/.hermes/skills/`。
-- **不要删除目录**，Hermes 升级/重启后会自动恢复
-- 正确做法：添加到 `~/.hermes/config.yaml` 的 `skills.disabled` 列表
-- 需要时可从 config 移除重新启用
+### 外部技能（external）
+位于 `~/.agents/skills/`，所有 Agent（Claude Code、OpenCode、Cursor 等）共用。删除前请确认不影响其他 Agent。
 
-#### Optional skills（`hermes-agent/optional-skills/`）
-官方可选技能，需通过 `hermes skills install` 手动安装。
-- **`sync_skills()` 不会同步这些技能**（它只扫描 `skills/` 目录，第 49 行：`Path(__file__).parent.parent / "skills"`）
-- 删除 `~/.hermes/skills/` 下的 optional skills 副本后**不会自动恢复**
-- 可以直接删除，需要时用 `hermes skills install` 重新安装
+### 内置技能（builtin）
+通过添加到 `~/.hermes/config.yaml` 的 `skills.disabled` 列表来禁用。
 
-> ⚠️ 关键区别：审计脚本必须同时检查 `skills/` 和 `optional-skills/` 两个目录才能正确识别 builtin 副本，否则会误判为 standalone。
+> ⚠️ 已禁用的零调用技能不会重复建议。如果某个 builtin 已经在 `skills.disabled` 中，审计报告会将其标记为"无需操作"。
 
 ## 脚本检测逻辑
 
-脚本通过以下规则判断技能来源（优先级从高到低）：
+脚本通过 **hermes 内部 API + 文件系统扫描** 双重数据源确定技能来源：
 
-1. **external**：在 `~/.agents/skills/` 下存在 → 全局共享（所有 Agent 共用）
-2. **builtin**：在 `~/.hermes/skills/` 下，同时 `hermes-agent/skills/` 或 `hermes-agent/optional-skills/` 递归目录中存在同名 SKILL.md → 内置副本
-3. **standalone**：仅在 `~/.hermes/skills/` 下存在 → 独立安装
+### 第一优先级：hermes 内部 API（权威来源）
 
-> 注意：MLOps 等技能嵌套在二级子目录下（如 `mlops/training/axolotl/`），必须使用 `rglob("SKILL.md")` 递归搜索，不能只用一层 `iterdir()`。
+脚本通过定位 `hermes` 可执行文件的 shebang 找到其 venv Python，直接调用内部模块获取结构化数据：
+
+| 内部 API | 作用 | 返回 |
+|----------|------|------|
+| `_find_all_skills(skip_disabled=True)` | 扫描所有物理存在的技能（含已禁用） | 名称 + 分类 |
+| `_read_manifest()` | 内置技能清单（JSON manifest） | builtin 名称集合 |
+| `HubLockFile().list_installed()` | Hub 锁定文件（记录从 skills.sh 等安装的技能） | hub 安装记录 |
+
+**来源判定**（与 `hermes skills list` CLI 完全一致）：
+1. 在 hub lock 中 → `hub`
+2. 名称在 builtin manifest 中 → `builtin`
+3. 其余 → `local`
+
+### 第二优先级：文件系统扫描（定位目录路径）
+
+文件系统扫描仅用于定位技能的实际目录路径（用于备份/删除操作）和获取安装时间。当 hermes 内部 API 不可用时，fallback 到纯文件系统模式（按扫描位置判断 `local`/`external`）。
+
+### 来源类型定义
+
+| 来源 | 含义 | 清理方式 |
+|------|------|---------|
+| `builtin` | Hermes 内置技能（通过 manifest 注册） | 添加到 `config.yaml` 的 `skills.disabled` |
+| `hub` | 从 skills.sh 等 Hub 源安装的技能 | `hermes skills uninstall` |
+| `local` | 本地安装的技能（独立目录在 `~/.hermes/skills/`） | 直接删除目录 |
+| `external` | 外部 Agent 共享技能（`~/.agents/skills/`） | 删除需谨慎，影响所有 Agent |
+
+### 已禁用技能处理
+
+脚本读取 `config.yaml` 的 `skills.disabled` 列表：
+- 已禁用的零调用技能 → **不重复建议**（已在报告中注明"无需操作"）
+- 已禁用但有历史调用的技能 → 单独列出供参考
+- 未禁用的零调用 builtin → 建议添加到 `skills.disabled`
 
 ## 备份恢复
 

@@ -18,6 +18,7 @@ import json
 import math
 import shutil
 import sqlite3
+import subprocess
 import tarfile
 from collections import defaultdict
 from datetime import datetime
@@ -36,8 +37,6 @@ STATE_DB = HERMES_HOME / "state.db"
 SKILLS_DIR = HERMES_HOME / "skills"
 CONFIG_PATH = HERMES_HOME / "config.yaml"
 AGENTS_SKILLS = Path.home() / ".agents" / "skills"
-BUILTIN_SKILLS = HERMES_HOME / "hermes-agent" / "skills"
-BUILTIN_OPTIONAL_SKILLS = HERMES_HOME / "hermes-agent" / "optional-skills"
 BACKUP_DIR = SKILLS_DIR / ".audit-backups"
 
 # ─── 时间窗口定义 ────────────────────────────────────────────────────────────
@@ -63,13 +62,95 @@ def get_current_timestamp() -> float:
     return datetime.now().timestamp()
 
 
+# ─── Hermes 内部 API ─────────────────────────────────────────────────────────
+def find_hermes_venv_python() -> Path | None:
+    """通过 hermes 可执行文件的 shebang 定位 venv Python。"""
+    hermes_bin = shutil.which("hermes")
+    if not hermes_bin:
+        return None
+    try:
+        with open(hermes_bin) as f:
+            first_line = f.readline().strip()
+            if first_line.startswith("#!"):
+                python_path = first_line[2:].strip()
+                if Path(python_path).exists():
+                    return Path(python_path)
+    except (OSError, PermissionError):
+        pass
+    return None
+
+
+def get_hermes_skill_registry() -> dict[str, dict] | None:
+    """通过 hermes 内部 API 获取权威技能来源映射。
+
+    返回 {name: {source: "hub"|"builtin"|"local", category: str|None}}。
+    如果 hermes venv 不可用则返回 None，调用方 fallback 到文件系统判断。
+    """
+    python = find_hermes_venv_python()
+    if not python:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                str(python),
+                "-c",
+                """
+import json
+from tools.skills_tool import _find_all_skills
+from tools.skills_sync import _read_manifest
+from tools.skills_hub import HubLockFile
+
+all_skills = _find_all_skills(skip_disabled=True)
+hub_names = {e['name'] for e in HubLockFile().list_installed()}
+builtin_names = set(_read_manifest())
+
+output = {}
+for s in all_skills:
+    name = s['name']
+    if name in hub_names:
+        source = 'hub'
+    elif name in builtin_names:
+        source = 'builtin'
+    else:
+        source = 'local'
+    output[name] = {'source': source, 'category': s.get('category')}
+print(json.dumps(output))
+""",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def get_disabled_set() -> set[str]:
+    """读取 config.yaml 中已禁用的技能名称集合。"""
+    if not CONFIG_PATH.exists():
+        return set()
+    try:
+        with open(CONFIG_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        return set(config.get("skills", {}).get("disabled", []))
+    except Exception:
+        return set()
+
+
 # ─── 技能扫描 ────────────────────────────────────────────────────────────────
 def scan_all_skills() -> dict[str, dict]:
-    """扫描所有已安装技能"""
+    """扫描文件系统定位技能目录，合并 hermes 内部 API 判定来源。
+
+    以 hermes 内部 API (_find_all_skills + _read_manifest + HubLockFile)
+    的输出为权威来源，文件系统扫描仅用于定位目录路径和安装时间。
+    """
     skills = {}
     _EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups"))
 
-    def scan_directory(base_dir: Path, default_source: str):
+    def scan_directory(base_dir: Path):
         if not base_dir.exists():
             return
         for skill_md in base_dir.rglob("SKILL.md"):
@@ -83,39 +164,52 @@ def scan_all_skills() -> dict[str, dict]:
             parent = skill_dir.parent
             category = parent.name if parent != base_dir else None
 
-            source = default_source
-            if default_source == "standalone":
-                for base_dir in (BUILTIN_SKILLS, BUILTIN_OPTIONAL_SKILLS):
-                    if not base_dir.exists():
-                        continue
-                    for builtin_skill_md in base_dir.rglob("SKILL.md"):
-                        if any(part in _EXCLUDED for part in builtin_skill_md.parts):
-                            continue
-                        if builtin_skill_md.parent.name == name:
-                            source = "builtin"
-                            break
-                    if source == "builtin":
-                        break
-
             skills[name] = {
                 "dir": str(skill_dir),
-                "source": source,
+                "source": None,  # 由 registry 填充
                 "category": category,
                 "installed_at": datetime.fromtimestamp(skill_dir.stat().st_mtime).strftime(
                     "%Y-%m-%d"
                 ),
+                "disabled": False,
             }
 
-    scan_directory(SKILLS_DIR, "standalone")
+    scan_directory(SKILLS_DIR)
 
     if AGENTS_SKILLS.exists():
-        scan_directory(AGENTS_SKILLS, "external")
         for skill_md in AGENTS_SKILLS.rglob("SKILL.md"):
             if any(part in _EXCLUDED for part in skill_md.parts):
                 continue
             name = skill_md.parent.name
-            if name in skills and skills[name]["source"] == "standalone":
-                skills[name]["source"] = "external"
+            if name not in skills:
+                parent = skill_md.parent.parent
+                category = parent.name if parent != AGENTS_SKILLS else None
+                skills[name] = {
+                    "dir": str(skill_md.parent),
+                    "source": None,
+                    "category": category,
+                    "installed_at": datetime.fromtimestamp(
+                        skill_md.parent.stat().st_mtime
+                    ).strftime("%Y-%m-%d"),
+                    "disabled": False,
+                }
+
+    # 合并 hermes 内部 API 的权威来源判断
+    registry = get_hermes_skill_registry()
+    disabled = get_disabled_set()
+
+    for name, info in skills.items():
+        info["disabled"] = name in disabled
+        if registry and name in registry:
+            info["source"] = registry[name]["source"]
+            if registry[name]["category"] and not info["category"]:
+                info["category"] = registry[name]["category"]
+        else:
+            # 不在 registry 中（平台不匹配 / 解析失败 / 孤儿技能）
+            if info["dir"].startswith(str(AGENTS_SKILLS)):
+                info["source"] = "external"
+            else:
+                info["source"] = "local"
 
     return skills
 
@@ -253,6 +347,7 @@ def generate_report(
                 "source": info["source"],
                 "category": info.get("category"),
                 "installed_at": info["installed_at"],
+                "disabled": info.get("disabled", False),
                 "skill_view": stats.get("skill_view", 0),
                 "skill_manage": stats.get("skill_manage", 0),
                 "total_calls": stats.get("skill_view", 0) + stats.get("skill_manage", 0),
@@ -275,9 +370,12 @@ def generate_report(
 
     level_counts = defaultdict(int)
     source_counts = defaultdict(int)
+    disabled_count = 0
     for s in all_skills_data:
         level_counts[s["level"]] += 1
         source_counts[s["source"]] += 1
+        if s.get("disabled"):
+            disabled_count += 1
 
     lines.append("## 📊 概览")
     lines.append("")
@@ -290,8 +388,10 @@ def generate_report(
     lines.append(f"- ❌ 零调用: {level_counts.get('❌ 零调用', 0)}")
     lines.append("")
     lines.append(f"- 📦 内置 (builtin): {source_counts.get('builtin', 0)}")
+    lines.append(f"- 🌐 Hub: {source_counts.get('hub', 0)}")
     lines.append(f"- 🔗 外部 (external): {source_counts.get('external', 0)}")
-    lines.append(f"- 📁 独立 (standalone): {source_counts.get('standalone', 0)}")
+    lines.append(f"- 📁 独立 (local): {source_counts.get('local', 0)}")
+    lines.append(f"- 🔒 已禁用: {disabled_count}")
     lines.append("")
 
     # 活跃技能 TOP 20
@@ -301,8 +401,9 @@ def generate_report(
     lines.append("| # | 技能 | 来源 | 近3d | 近7d | 近30d | 全部 | 热度分 | 趋势 |")
     lines.append("|---|------|------|------|------|-------|------|--------|------|")
     for i, s in enumerate(active_skills[:20], 1):
+        status = "🔒" if s.get("disabled") else ""
         lines.append(
-            f"| {i} | {s['name']} | {s['source']} | "
+            f"| {i} | {status}{s['name']} | {s['source']} | "
             f"{s['last_3d']} | {s['last_7d']} | {s['last_30d']} | "
             f"{s['total_calls']} | {s['composite']} | {s['trend']} |"
         )
@@ -315,8 +416,9 @@ def generate_report(
         lines.append("| # | 技能 | 来源 | 近3d | 近7d | 近30d | 全部 | 热度分 | 趋势 |")
         lines.append("|---|------|------|------|------|-------|------|--------|------|")
         for i, s in enumerate(active_skills[20:], 21):
+            status = "🔒" if s.get("disabled") else ""
             lines.append(
-                f"| {i} | {s['name']} | {s['source']} | "
+                f"| {i} | {status}{s['name']} | {s['source']} | "
                 f"{s['last_3d']} | {s['last_7d']} | {s['last_30d']} | "
                 f"{s['total_calls']} | {s['composite']} | {s['trend']} |"
             )
@@ -324,19 +426,23 @@ def generate_report(
         lines.append("</details>")
         lines.append("")
 
-    # 零调用技能（按来源细分）
+    # ─── 零调用技能分组 ───────────────────────────────────────────
     zero_skills = [s for s in all_skills_data if s["total_calls"] == 0]
-    # standalone: 仅在 ~/.hermes/skills/ 中，仅 Hermes 使用
-    zero_standalone = [s for s in zero_skills if s["source"] == "standalone"]
-    # external: 在 ~/.agents/skills/ 中，全局共享（所有 Agent 共用）
-    zero_external = [s for s in zero_skills if s["source"] == "external"]
-    zero_builtin = [s for s in zero_skills if s["source"] == "builtin"]
+    zero_standalone = [s for s in zero_skills if s["source"] == "local" and not s.get("disabled")]
+    zero_external = [s for s in zero_skills if s["source"] == "external" and not s.get("disabled")]
+    zero_builtin = [s for s in zero_skills if s["source"] == "builtin" and not s.get("disabled")]
+    zero_hub = [s for s in zero_skills if s["source"] == "hub" and not s.get("disabled")]
+    # 已禁用的零调用技能：不单独建议（已在 disabled 中）
+    zero_already_disabled = [s for s in zero_skills if s.get("disabled")]
 
-    # standalone 零调用：直接建议删除
+    # 已禁用但有历史调用的技能（参考信息）
+    disabled_with_calls = [s for s in all_skills_data if s.get("disabled") and s["total_calls"] > 0]
+
+    # standalone/local 零调用 → 建议删除
     if zero_standalone:
-        lines.append("## 🗑️ 建议删除（standalone + 零调用）")
+        lines.append("## 🗑️ 建议删除（local + 零调用）")
         lines.append("")
-        lines.append("这些技能仅在 `~/.hermes/skills/` 中，仅 Hermes 使用，删除不影响其他 Agent。")
+        lines.append("这些技能仅在 `~/.hermes/skills/` 中，删除不影响其他 Agent。")
         lines.append("")
         lines.append("| # | 技能 | 安装时间 | 分类 |")
         lines.append("|---|------|---------|------|")
@@ -344,7 +450,7 @@ def generate_report(
             lines.append(f"| {i} | {s['name']} | {s['installed_at']} | {s['category'] or '-'} |")
         lines.append("")
 
-    # external 零调用：全局共享，删除需谨慎
+    # external 零调用 → 全局共享，删除需谨慎
     if zero_external:
         lines.append("## 🔗 全局共享技能（external + 零调用）")
         lines.append("")
@@ -361,8 +467,14 @@ def generate_report(
             lines.append(f"| {i} | {s['name']} | {s['installed_at']} | 全局共享，删除需确认 |")
         lines.append("")
 
+    # builtin 零调用 → 建议禁用（仅未禁用的）
     if zero_builtin:
-        lines.append("## ⚠️ 建议禁用（builtin + 零调用）")
+        lines.append("## ⚠️ 建议禁用（builtin + 零调用 + 未禁用）")
+        lines.append("")
+        lines.append(
+            "> 这些内置技能从未被调用，建议添加到 `config.yaml` 的 `skills.disabled` 列表。"
+        )
+        lines.append("> 已禁用的零调用技能不会出现在此列表中。")
         lines.append("")
 
         by_category = defaultdict(list)
@@ -397,19 +509,54 @@ def generate_report(
         lines.append("</details>")
         lines.append("")
 
+    # hub 零调用 → 建议卸载
+    if zero_hub:
+        lines.append("## 🌐 Hub 技能（hub + 零调用）")
+        lines.append("")
+        lines.append("建议通过 `hermes skills uninstall` 卸载。")
+        lines.append("")
+        lines.append("| # | 技能 | 来源 | 操作 |")
+        lines.append("|---|------|------|------|")
+        for i, s in enumerate(zero_hub, 1):
+            lines.append(
+                f"| {i} | {s['name']} | {s['source']} | `hermes skills uninstall {s['name']}` |"
+            )
+        lines.append("")
+
+    # 已禁用但有历史调用的技能（参考信息）
+    if disabled_with_calls:
+        lines.append("## 🔒 已禁用技能（有历史调用）")
+        lines.append("")
+        lines.append("这些技能已被禁用，但历史上有过调用记录，供参考。")
+        lines.append("")
+        lines.append("| # | 技能 | 来源 | 总调用 | 分类 |")
+        lines.append("|---|------|------|--------|------|")
+        for i, s in enumerate(sorted(disabled_with_calls, key=lambda x: -x["total_calls"]), 1):
+            lines.append(
+                f"| {i} | {s['name']} | {s['source']} | "
+                f"{s['total_calls']} | {s['category'] or '-'} |"
+            )
+        lines.append("")
+
+    # 清理操作汇总
     lines.append("## 📝 清理操作汇总")
     lines.append("")
-    lines.append(f"- **删除 standalone 技能**: {len(zero_standalone)} 个（仅 Hermes 使用）")
+    lines.append(f"- **删除 local 技能**: {len(zero_standalone)} 个")
+    lines.append(f"- **卸载 hub 技能**: {len(zero_hub)} 个")
     lines.append(f"- **禁用内置技能**: {len(zero_builtin)} 个（通过 config.yaml disabled）")
     lines.append(f"- **全局共享技能**: {len(zero_external)} 个（需确认不影响其他 Agent）")
+    if zero_already_disabled:
+        lines.append(f"- **已禁用的零调用技能**: {len(zero_already_disabled)} 个（无需操作）")
     lines.append("")
 
     json_data = {
         "generated_at": datetime.now().isoformat(),
         "total_skills": len(all_skills_data),
+        "disabled_count": disabled_count,
         "level_counts": dict(level_counts),
         "skills": [{k: v for k, v in s.items() if k != "timestamps"} for s in all_skills_data],
         "delete_candidates": [s["name"] for s in zero_standalone],
+        "hub_uninstall_candidates": [s["name"] for s in zero_hub],
         "shared_external": [s["name"] for s in zero_external],
         "disable_candidates": [s["name"] for s in zero_builtin],
     }
@@ -445,6 +592,7 @@ def backup_skills(
 def execute_cleanup(
     delete_names: list[str],
     disable_names: list[str],
+    hub_uninstall_names: list[str],
     skills_info: dict[str, dict],
     dry_run: bool = True,
 ) -> dict:
@@ -453,17 +601,20 @@ def execute_cleanup(
         "failed_delete": [],
         "disabled": [],
         "failed_disable": [],
+        "hub_uninstalled": [],
+        "failed_hub_uninstall": [],
         "backup_file": None,
         "backup_size_mb": 0,
     }
 
-    all_cleanup = delete_names + disable_names
+    all_cleanup = delete_names + disable_names + hub_uninstall_names
     if all_cleanup:
         backup_file, backed_up, size_mb = backup_skills(all_cleanup, skills_info)
         result["backup_file"] = backup_file
         result["backup_size_mb"] = size_mb
         print(f"\n✅ 已备份 {len(backed_up)} 个技能到: {backup_file} ({size_mb} MB)")
 
+    # 删除 local 技能
     if not dry_run:
         for name in delete_names:
             info = skills_info.get(name, {})
@@ -486,6 +637,28 @@ def execute_cleanup(
             result["deleted"].append(name)
             print(f"  [DRY RUN] 将删除: {name}")
 
+    # 卸载 hub 技能
+    hermes_bin = shutil.which("hermes")
+    if not dry_run and hub_uninstall_names and hermes_bin:
+        for name in hub_uninstall_names:
+            try:
+                subprocess.run(
+                    [hermes_bin, "skills", "uninstall", name],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                result["hub_uninstalled"].append(name)
+                print(f"  🌐 已卸载 hub 技能: {name}")
+            except Exception as e:
+                result["failed_hub_uninstall"].append(name)
+                print(f"  ❌ 卸载失败: {name} - {e}")
+    else:
+        for name in hub_uninstall_names:
+            result["hub_uninstalled"].append(name)
+            print(f"  [DRY RUN] 将卸载: {name}")
+
+    # 禁用内置技能
     if not dry_run:
         try:
             with open(CONFIG_PATH) as f:
@@ -557,14 +730,30 @@ def main():
     print("📋 审计完成摘要")
     print("=" * 60)
     print(f"  总技能数: {json_data['total_skills']}")
+    print(f"  已禁用: {json_data.get('disabled_count', 0)}")
     print(f"  有调用记录: {len(call_stats)}")
     print(f"  零调用: {json_data['level_counts'].get('❌ 零调用', 0)}")
-    print(f"  建议删除 (standalone): {len(json_data['delete_candidates'])}")
+    print(f"  建议删除 (local): {len(json_data['delete_candidates'])}")
+    print(f"  建议卸载 (hub): {len(json_data['hub_uninstall_candidates'])}")
     print(f"  建议禁用 (builtin): {len(json_data['disable_candidates'])}")
     print(f"  全局共享 (external): {len(json_data['shared_external'])}")
     print("=" * 60)
 
-    if args.dry_run:
+    if not args.dry_run:
+        print("\n🔧 执行清理...")
+        cleanup_result = execute_cleanup(
+            delete_names=json_data["delete_candidates"],
+            disable_names=json_data["disable_candidates"],
+            hub_uninstall_names=json_data["hub_uninstall_candidates"],
+            skills_info=skills,
+            dry_run=False,
+        )
+        print(f"\n  已删除: {len(cleanup_result['deleted'])} 个")
+        print(f"  已卸载 (hub): {len(cleanup_result['hub_uninstalled'])} 个")
+        print(f"  已禁用: {len(cleanup_result['disabled'])} 个")
+        if cleanup_result["backup_file"]:
+            print(f"  备份: {cleanup_result['backup_file']}")
+    else:
         print("\n💡 当前为 DRY RUN 模式，未执行任何清理操作")
         print("   使用 --execute 参数执行实际清理（将先备份）")
 
