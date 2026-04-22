@@ -20,8 +20,10 @@ description: 将当前会话内容总结到 Obsidian 工作日志或个人日记
 
 所有文件系统操作通过 `scripts/obsidian-helper.py` 完成，脚本路径相对于本 skill 目录。
 
+**必须使用 uv 运行**（自动管理依赖）：
+
 ```bash
-python3 scripts/obsidian-helper.py --vault <work|personal> --action <action>
+uv run scripts/obsidian-helper.py --vault <work|personal> --action <action>
 ```
 
 可用 action：

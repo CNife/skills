@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Obsidian 日记辅助脚本：路径计算、文件创建、待办查询。
 
 用法:
-    python3 scripts/obsidian-helper.py --vault work --action context
-    python3 scripts/obsidian-helper.py --vault work --action locate
-    python3 scripts/obsidian-helper.py --vault work --action create
-    python3 scripts/obsidian-helper.py --vault work --action todos
-    python3 scripts/obsidian-helper.py --vault work --action recent --days 10
+    uv run obsidian-helper.py --vault work --action context
+    uv run obsidian-helper.py --vault work --action locate
+    uv run obsidian-helper.py --vault work --action create
+    uv run obsidian-helper.py --vault work --action todos
+    uv run obsidian-helper.py --vault work --action recent --days 10
 """
 
 import argparse
 import os
 import re
 import shutil
-import subprocess
 import sys
 from datetime import datetime, timedelta
 
@@ -115,17 +118,11 @@ def action_todos(vault_name: str, days: int = 7):
     todos = []
     for _, fpath in files:
         rel_path = os.path.relpath(fpath, base)
-        with open(fpath, "r", encoding="utf-8") as f:
+        with open(fpath, encoding="utf-8") as f:
             for line_no, line in enumerate(f, 1):
                 m = todo_pattern.match(line)
                 if m and m.group(1) == " ":
-                    todos.append(
-                        {
-                            "file": rel_path,
-                            "line": line_no,
-                            "content": m.group(2).strip(),
-                        }
-                    )
+                    todos.append({"file": rel_path, "line": line_no, "content": m.group(2).strip()})
 
     if not todos:
         print("NO_TODOS")
@@ -176,7 +173,7 @@ def action_read(vault_name: str, file_path: str | None = None):
         print(f"FILE_NOT_FOUND={target}")
         return
 
-    with open(target, "r", encoding="utf-8") as f:
+    with open(target, encoding="utf-8") as f:
         content = f.read()
 
     print(f"FILE={target}")
@@ -208,13 +205,11 @@ def _scan_todos(cfg: dict, days: int = 14) -> list[dict]:
     todos = []
     for _, fpath in files:
         rel_path = os.path.relpath(fpath, base)
-        with open(fpath, "r", encoding="utf-8") as f:
+        with open(fpath, encoding="utf-8") as f:
             for line_no, line in enumerate(f, 1):
                 m = todo_pattern.match(line)
                 if m and m.group(1) == " ":
-                    todos.append(
-                        {"file": rel_path, "line": line_no, "content": m.group(2).strip()}
-                    )
+                    todos.append({"file": rel_path, "line": line_no, "content": m.group(2).strip()})
     return todos
 
 
@@ -244,11 +239,9 @@ def _read_rules(vault_name: str) -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     ref_file = os.path.join(script_dir, "..", "references", f"{vault_name}-log.md")
     if not os.path.exists(ref_file):
-        ref_file = os.path.join(
-            script_dir, "..", "references", f"{vault_name}-diary.md"
-        )
+        ref_file = os.path.join(script_dir, "..", "references", f"{vault_name}-diary.md")
     if os.path.exists(ref_file):
-        with open(ref_file, "r", encoding="utf-8") as f:
+        with open(ref_file, encoding="utf-8") as f:
             return f.read().strip()
     return ""
 
@@ -256,7 +249,9 @@ def _read_rules(vault_name: str) -> str:
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
 
 
-def _print_outline(lines: list[str], diary_path: str, max_summary_lines: int = 3, max_line_chars: int = 100):
+def _print_outline(
+    lines: list[str], diary_path: str, max_summary_lines: int = 3, max_line_chars: int = 100
+):
     total = len(lines)
     print(f"(共 {total} 行)")
 
@@ -289,7 +284,9 @@ def _print_outline(lines: list[str], diary_path: str, max_summary_lines: int = 3
             print(f"{i + 1}: {display}")
             summary_count += 1
 
-    print(f"\n💡 用 Read 工具读取感兴趣段落，例：Read(filePath=\"{diary_path}\", offset=行号, limit=30)")
+    print(
+        f'\n💡 用 Read 工具读取感兴趣段落，例：Read(filePath="{diary_path}", offset=行号, limit=30)'
+    )
 
 
 def action_context(vault_name: str, days: int = 14):
@@ -322,7 +319,7 @@ def action_context(vault_name: str, days: int = 14):
         for mtime, fpath in recent:
             if fpath == today:
                 continue
-            with open(fpath, "r", encoding="utf-8") as f:
+            with open(fpath, encoding="utf-8") as f:
                 lines = f.readlines()[:30]
             rel = os.path.relpath(fpath, cfg["base"])
             print(f"\n## {rel} ({mtime.strftime('%m-%d %H:%M')})")
@@ -331,9 +328,9 @@ def action_context(vault_name: str, days: int = 14):
             if len(lines) == 30:
                 print("\n... (截断)")
 
-    print(f"\n--- TODAY ---")
+    print("\n--- TODAY ---")
     if exists:
-        with open(today, "r", encoding="utf-8") as f:
+        with open(today, encoding="utf-8") as f:
             lines = f.readlines()
         _print_outline(lines, today)
     else:

@@ -13,24 +13,22 @@
 依赖自动管理：uv 会根据上方的 inline metadata 自动创建临时环境并安装 pyyaml。
 """
 
-import sqlite3
+import argparse
 import json
 import math
-import os
 import shutil
+import sqlite3
 import tarfile
-import argparse
-from pathlib import Path
-from datetime import datetime, timezone
 from collections import defaultdict
-from typing import Dict, List, Tuple, Set
+from datetime import datetime
+from pathlib import Path
 
 try:
     import yaml
-except ImportError:
+except ImportError as e:
     print("错误: 需要 pyyaml 库。请使用 'uv run audit-hermes-agent-skills.py' 运行此脚本。")
     print("uv 会自动安装依赖。")
-    raise SystemExit(1)
+    raise SystemExit(1) from e
 
 # ─── 路径配置 ────────────────────────────────────────────────────────────────
 HERMES_HOME = Path.home() / ".hermes"
@@ -57,12 +55,7 @@ DECAY_PARAMS = {
     "lambda_90d": math.log(2) / 90.0,
 }
 
-COMPOSITE_WEIGHTS = {
-    "score_3d": 0.50,
-    "score_7d": 0.25,
-    "score_30d": 0.15,
-    "score_90d": 0.10,
-}
+COMPOSITE_WEIGHTS = {"score_3d": 0.50, "score_7d": 0.25, "score_30d": 0.15, "score_90d": 0.10}
 
 
 def get_current_timestamp() -> float:
@@ -70,7 +63,7 @@ def get_current_timestamp() -> float:
 
 
 # ─── 技能扫描 ────────────────────────────────────────────────────────────────
-def scan_all_skills() -> Dict[str, dict]:
+def scan_all_skills() -> dict[str, dict]:
     """扫描所有已安装技能"""
     skills = {}
     _EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups"))
@@ -100,9 +93,9 @@ def scan_all_skills() -> Dict[str, dict]:
                 "dir": str(skill_dir),
                 "source": source,
                 "category": category,
-                "installed_at": datetime.fromtimestamp(
-                    skill_dir.stat().st_mtime
-                ).strftime("%Y-%m-%d"),
+                "installed_at": datetime.fromtimestamp(skill_dir.stat().st_mtime).strftime(
+                    "%Y-%m-%d"
+                ),
             }
 
     scan_directory(SKILLS_DIR, "standalone")
@@ -120,7 +113,7 @@ def scan_all_skills() -> Dict[str, dict]:
 
 
 # ─── 数据库查询 ──────────────────────────────────────────────────────────────
-def count_skill_calls(now_ts: float) -> Dict[str, dict]:
+def count_skill_calls(now_ts: float) -> dict[str, dict]:
     """统计每个技能的调用次数"""
     if not STATE_DB.exists():
         return {}
@@ -147,11 +140,7 @@ def count_skill_calls(now_ts: float) -> Dict[str, dict]:
                         continue
 
                     if name not in stats:
-                        stats[name] = {
-                            "skill_view": 0,
-                            "skill_manage": 0,
-                            "timestamps": [],
-                        }
+                        stats[name] = {"skill_view": 0, "skill_manage": 0, "timestamps": []}
 
                     if fn == "skill_view":
                         stats[name]["skill_view"] += 1
@@ -159,10 +148,10 @@ def count_skill_calls(now_ts: float) -> Dict[str, dict]:
                         stats[name]["skill_manage"] += 1
 
                     stats[name]["timestamps"].append(timestamp)
-        except:
+        except (json.JSONDecodeError, KeyError):
             continue
 
-    for name, data in stats.items():
+    for _name, data in stats.items():
         ts_list = data["timestamps"]
         for window, seconds in TIME_WINDOWS.items():
             cutoff = now_ts - seconds
@@ -174,7 +163,7 @@ def count_skill_calls(now_ts: float) -> Dict[str, dict]:
 
 
 # ─── 热度计算 ────────────────────────────────────────────────────────────────
-def calc_decay_score(timestamps: List[float], now_ts: float, lambda_val: float) -> float:
+def calc_decay_score(timestamps: list[float], now_ts: float, lambda_val: float) -> float:
     if not timestamps:
         return 0.0
     score = 0.0
@@ -184,7 +173,7 @@ def calc_decay_score(timestamps: List[float], now_ts: float, lambda_val: float) 
     return round(score, 3)
 
 
-def calc_heat(timestamps: List[float], now_ts: float) -> Dict[str, float]:
+def calc_heat(timestamps: list[float], now_ts: float) -> dict[str, float]:
     return {
         "score_3d": calc_decay_score(timestamps, now_ts, DECAY_PARAMS["lambda_3d"]),
         "score_7d": calc_decay_score(timestamps, now_ts, DECAY_PARAMS["lambda_7d"]),
@@ -193,14 +182,14 @@ def calc_heat(timestamps: List[float], now_ts: float) -> Dict[str, float]:
     }
 
 
-def calc_composite_score(heat_scores: Dict[str, float]) -> float:
+def calc_composite_score(heat_scores: dict[str, float]) -> float:
     score = 0.0
     for key, weight in COMPOSITE_WEIGHTS.items():
         score += heat_scores.get(key, 0.0) * weight
     return round(score, 3)
 
 
-def get_heat_level(heat_scores: Dict[str, float], window_counts: Dict[str, int]) -> Tuple[str, str]:
+def get_heat_level(heat_scores: dict[str, float], window_counts: dict[str, int]) -> tuple[str, str]:
     if window_counts.get("last_3d", 0) > 0 and heat_scores.get("score_3d", 0) > 2:
         level = "🔥 活跃"
     elif window_counts.get("last_7d", 0) > 0 and heat_scores.get("score_7d", 0) > 1:
@@ -233,10 +222,8 @@ def get_heat_level(heat_scores: Dict[str, float], window_counts: Dict[str, int])
 
 # ─── 报告生成 ────────────────────────────────────────────────────────────────
 def generate_report(
-    skills: Dict[str, dict],
-    call_stats: Dict[str, dict],
-    now_ts: float
-) -> Tuple[str, dict]:
+    skills: dict[str, dict], call_stats: dict[str, dict], now_ts: float
+) -> tuple[str, dict]:
     lines = []
     lines.append("# 🔍 Hermes Agent 技能审计报告")
     lines.append("")
@@ -252,27 +239,29 @@ def generate_report(
         window_counts = {w: stats.get(w, 0) for w in TIME_WINDOWS}
         level, trend = get_heat_level(heat, window_counts)
 
-        all_skills_data.append({
-            "name": name,
-            "source": info["source"],
-            "category": info.get("category"),
-            "installed_at": info["installed_at"],
-            "skill_view": stats.get("skill_view", 0),
-            "skill_manage": stats.get("skill_manage", 0),
-            "total_calls": stats.get("skill_view", 0) + stats.get("skill_manage", 0),
-            "last_3d": window_counts["last_3d"],
-            "last_7d": window_counts["last_7d"],
-            "last_30d": window_counts["last_30d"],
-            "last_90d": window_counts["last_90d"],
-            "score_3d": heat["score_3d"],
-            "score_7d": heat["score_7d"],
-            "score_30d": heat["score_30d"],
-            "score_90d": heat["score_90d"],
-            "composite": composite,
-            "level": level,
-            "trend": trend,
-            "timestamps": timestamps,
-        })
+        all_skills_data.append(
+            {
+                "name": name,
+                "source": info["source"],
+                "category": info.get("category"),
+                "installed_at": info["installed_at"],
+                "skill_view": stats.get("skill_view", 0),
+                "skill_manage": stats.get("skill_manage", 0),
+                "total_calls": stats.get("skill_view", 0) + stats.get("skill_manage", 0),
+                "last_3d": window_counts["last_3d"],
+                "last_7d": window_counts["last_7d"],
+                "last_30d": window_counts["last_30d"],
+                "last_90d": window_counts["last_90d"],
+                "score_3d": heat["score_3d"],
+                "score_7d": heat["score_7d"],
+                "score_30d": heat["score_30d"],
+                "score_90d": heat["score_90d"],
+                "composite": composite,
+                "level": level,
+                "trend": trend,
+                "timestamps": timestamps,
+            }
+        )
 
     all_skills_data.sort(key=lambda x: x["composite"], reverse=True)
 
@@ -344,26 +333,24 @@ def generate_report(
         lines.append("| # | 技能 | 安装时间 | 分类 |")
         lines.append("|---|------|---------|------|")
         for i, s in enumerate(zero_standalone, 1):
-            lines.append(
-                f"| {i} | {s['name']} | "
-                f"{s['installed_at']} | {s['category'] or '-'} |"
-            )
+            lines.append(f"| {i} | {s['name']} | {s['installed_at']} | {s['category'] or '-'} |")
         lines.append("")
 
     # external 零调用：全局共享，删除需谨慎
     if zero_external:
         lines.append("## 🔗 全局共享技能（external + 零调用）")
         lines.append("")
-        lines.append("> ⚠️ 这些技能在 `~/.agents/skills/` 下，所有 Agent（Claude Code、OpenCode、Cursor 等）共用。")
-        lines.append("> 即使 Hermes 零调用，其他 Agent 可能正在使用。删除前请确认不影响其他 Agent。")
+        lines.append(
+            "> ⚠️ 这些技能在 `~/.agents/skills/` 下，所有 Agent（Claude Code、OpenCode、Cursor 等）共用。"
+        )
+        lines.append(
+            "> 即使 Hermes 零调用，其他 Agent 可能正在使用。删除前请确认不影响其他 Agent。"
+        )
         lines.append("")
         lines.append("| # | 技能 | 安装时间 | 说明 |")
         lines.append("|---|------|---------|------|")
         for i, s in enumerate(zero_external, 1):
-            lines.append(
-                f"| {i} | {s['name']} | "
-                f"{s['installed_at']} | 全局共享，删除需确认 |"
-            )
+            lines.append(f"| {i} | {s['name']} | {s['installed_at']} | 全局共享，删除需确认 |")
         lines.append("")
 
     if zero_builtin:
@@ -413,10 +400,7 @@ def generate_report(
         "generated_at": datetime.now().isoformat(),
         "total_skills": len(all_skills_data),
         "level_counts": dict(level_counts),
-        "skills": [
-            {k: v for k, v in s.items() if k != "timestamps"}
-            for s in all_skills_data
-        ],
+        "skills": [{k: v for k, v in s.items() if k != "timestamps"} for s in all_skills_data],
         "delete_candidates": [s["name"] for s in zero_standalone],
         "shared_external": [s["name"] for s in zero_external],
         "disable_candidates": [s["name"] for s in zero_builtin],
@@ -426,7 +410,9 @@ def generate_report(
 
 
 # ─── 备份功能 ────────────────────────────────────────────────────────────────
-def backup_skills(skill_names: List[str], skills_info: Dict[str, dict]) -> Tuple[str, List[str], float]:
+def backup_skills(
+    skill_names: list[str], skills_info: dict[str, dict]
+) -> tuple[str, list[str], float]:
     """备份指定技能到 ~/.hermes/skills/.audit-backups/"""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -449,10 +435,10 @@ def backup_skills(skill_names: List[str], skills_info: Dict[str, dict]) -> Tuple
 
 # ─── 执行清理 ────────────────────────────────────────────────────────────────
 def execute_cleanup(
-    delete_names: List[str],
-    disable_names: List[str],
-    skills_info: Dict[str, dict],
-    dry_run: bool = True
+    delete_names: list[str],
+    disable_names: list[str],
+    skills_info: dict[str, dict],
+    dry_run: bool = True,
 ) -> dict:
     result = {
         "deleted": [],
@@ -522,21 +508,15 @@ def execute_cleanup(
 def main():
     parser = argparse.ArgumentParser(description="Hermes Agent 技能审计工具")
     parser.add_argument(
-        "--dry-run", action="store_true", default=True,
-        help="只生成报告，不执行实际清理（默认）"
+        "--dry-run", action="store_true", default=True, help="只生成报告，不执行实际清理（默认）"
     )
     parser.add_argument(
-        "--execute", action="store_false", dest="dry_run",
-        help="执行实际清理操作（先备份）"
+        "--execute", action="store_false", dest="dry_run", help="执行实际清理操作（先备份）"
     )
     parser.add_argument(
-        "--output", type=str, default=None,
-        help="报告输出路径（默认打印到 stdout）"
+        "--output", type=str, default=None, help="报告输出路径（默认打印到 stdout）"
     )
-    parser.add_argument(
-        "--json-output", type=str, default=None,
-        help="JSON 数据输出路径"
-    )
+    parser.add_argument("--json-output", type=str, default=None, help="JSON 数据输出路径")
     args = parser.parse_args()
 
     print("🔍 开始审计 Hermes Agent 技能...")
