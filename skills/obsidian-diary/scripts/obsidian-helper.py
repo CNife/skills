@@ -14,27 +14,58 @@
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
-VAULTS = {
-    "work": {
-        "base": "/mnt/c/Obsidian/工作",
-        "diary_dir": "工作日志",
-        "template": "日志模板.md",
-        "exclude_meta": {"AGENTS.md", "任务.md", "日志模板.md"},
-    },
-    "personal": {
-        "base": "/mnt/c/Obsidian/个人",
-        "diary_dir": "个人日记",
-        "template": "日记模板.md",
-        "exclude_meta": {"AGENTS.md"},
-    },
-}
+CONFIG_PATH = Path.home() / ".config" / "cnife-skills" / "obsidian-diary.json"
 
+
+def _load_vaults() -> dict[str, dict]:
+    if not CONFIG_PATH.exists():
+        print("CONFIG_MISSING=true", file=sys.stdout)
+        print(f"CONFIG_PATH={CONFIG_PATH}", file=sys.stdout)
+        print("", file=sys.stdout)
+        print("Obsidian diary configuration not found.", file=sys.stdout)
+        print(f"Please create {CONFIG_PATH} with the following structure:", file=sys.stdout)
+        print(file=sys.stdout)
+        print(json.dumps({
+            "vaults": {
+                "work": {
+                    "base": "/path/to/obsidian/work-vault",
+                    "diary_dir": "工作日志",
+                    "template": "日志模板.md",
+                    "exclude_meta": ["AGENTS.md", "任务.md", "日志模板.md"],
+                },
+                "personal": {
+                    "base": "/path/to/obsidian/personal-vault",
+                    "diary_dir": "个人日记",
+                    "template": "日记模板.md",
+                    "exclude_meta": ["AGENTS.md"],
+                },
+            }
+        }, ensure_ascii=False, indent=2), file=sys.stdout)
+        sys.exit(1)
+
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+
+    vaults = {}
+    for name, cfg in data.get("vaults", {}).items():
+        vaults[name] = {
+            "base": cfg["base"],
+            "diary_dir": cfg["diary_dir"],
+            "template": cfg["template"],
+            "exclude_meta": set(cfg.get("exclude_meta", [])),
+        }
+    return vaults
+
+
+VAULTS: dict[str, dict] = {}
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
 
@@ -338,12 +369,15 @@ def action_context(vault_name: str, days: int = 14):
 
 
 def main():
+    global VAULTS
+    VAULTS = _load_vaults()
+
     parser = argparse.ArgumentParser(description="Obsidian 日记辅助脚本")
     parser.add_argument(
         "--vault",
         choices=VAULTS.keys(),
         required=True,
-        help="目标 vault：work（工作日志）或 personal（个人日记）",
+        help="目标 vault（取决于配置文件中定义的 vault 名称）",
     )
     parser.add_argument(
         "--action",
