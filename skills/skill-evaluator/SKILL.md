@@ -400,6 +400,6 @@ clawhub install {slug}
 
 ## 参考文件指引
 
-- **reference.md** → 安全评估检查清单（威胁分类、攻击模式、审计清单）
-- **examples.md** → 完整评估案例（6 个 markitdown skills 实战对比）
+- **reference.md** → 评估原则、安全评估检查清单（威胁分类、攻击模式、审计清单、评分标准）
+- **examples.md** → 完整评估案例（6 个 markitdown skills 实战对比 + fallback 策略演示）
 - **patterns.md** → 最佳实践、常见陷阱、工具速查表
