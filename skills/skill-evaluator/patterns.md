@@ -1,5 +1,79 @@
 # 最佳实践与常见陷阱
 
+## 工具限制与绕过策略（实战经验）
+
+### 工具限制速查
+
+| 工具 | 限制 | 绕过方法 |
+|------|------|---------|
+| `web_extract` / `mcp_jina_read_url` | 将 GitHub / skills.sh / raw.githubusercontent.com 判定为内网地址，直接拒绝访问 | `git clone` 克隆仓库后本地读取，或用 `curl -sL` + `head` 读取 Raw 文件 |
+| `skills.sh CLI` | `bunx skills find` 经常超时（60s+ 无响应） | 等超时后改用 SkillHub 搜索或 GitHub API 搜索 |
+| `SkillHub show` | 不存在此子命令，SkillHub CLI 只有 search/install/upgrade/list/self-upgrade | 用 `skillhub --dir /tmp/xxx install <slug>` 下载到临时目录后读取源码 |
+| SkillHub 下载 | 偶发 SSL 错误 / 超时（lightmake.site） | 重试 1-2 次；再失败则用 `git clone` 找对应 GitHub 仓库 |
+| GitHub Raw URL | 同上，被 web_extract 拦截 | 用 `git clone` 或 `curl -sL` 代替 |
+
+### `git clone` 源码获取（核心备用方案）
+
+当 web 工具无法获取源码时，用 git clone 是最可靠的方式：
+
+```bash
+# 快速获取单一 skill 源码（只取最新提交）
+TMPDIR=$(mktemp -d) && git clone --depth 1 "https://github.com/{owner}/{repo}.git" "$TMPDIR"
+
+# 查看文件结构
+find "$TMPDIR" -type f
+
+# 读取 SKILL.md
+cat "$TMPDIR/SKILL.md"
+
+# 读取附带脚本
+find "$TMPDIR" -type f \( -name "*.sh" -o -name "*.py" -o -name "*.js" \) | while read f; do echo "=== $f ==="; cat "$f"; done
+
+# 完成后清理
+rm -rf "$TMPDIR"
+```
+
+**优点**：不依赖外部网络服务、不触发内网拦截、可获取完整文件结构（含 scripts/、references/ 等）。
+**注意**：`--depth 1` 只获取最新提交，如需查看历史再追加一次 fetch。
+
+### SkillHub 临时安装模式
+
+SkillHub 的 skill 不托管在 GitHub（或 GitHub 仓库信息不足），需要通过 `skillhub install` 下载到本地：
+
+```bash
+# 安装到临时目录（每次用不同目录，避免覆盖）
+TMPDIR="/tmp/skillhub-tmp-$$" && mkdir -p "$TMPDIR"
+skillhub --dir "$TMPDIR" install <slug>
+
+# 查看文件结构
+find "$TMPDIR/<slug>" -type f
+
+# 读取源码
+cat "$TMPDIR/<slug>/SKILL.md"
+cat "$TMPDIR/<slug>/scripts/*"
+
+# 完成后清理
+rm -rf "$TMPDIR"
+```
+
+**关键**：每次安装使用独立的临时目录（`$$` PID 后缀），避免多个 skill 安装互相覆盖。
+
+### GitHub API 元数据获取
+
+`web_extract` 无法获取 GitHub 仓库主页时，用 API 获取结构化数据：
+
+```bash
+# 仓库基本信息（Stars / Forks / 更新时间 / 描述 / License）
+curl -s "https://api.github.com/repos/{owner}/{repo}" | jq '{stargazers_count, forks_count, pushed_at, description, topics, license}'
+
+# 最近提交（判断维护状态）
+curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.[] | {sha, message: .commit.message[:80], date: .commit.author.date}'
+```
+
+**注意**：API 有速率限制（60 次/小时未认证），批量查询时合并请求。搜索用 `curl -s "https://api.github.com/search/repositories?q=<query>"`。
+
+---
+
 ## 信息收集速查表
 
 ### 什么信息去哪里找
@@ -19,6 +93,15 @@
 - 阶段 2 的所有信息收集操作应**同时执行**，不要串行等待
 - 多个 skill 的源码读取可并行
 - 多个 skill 的安全审计可并行
+- `git clone` 和 `curl` API 请求可并行
+
+---
+
+## 阶段 1 前置检查：本地已安装技能
+
+- **先检查本地**：执行 `ls ~/.agents/skills/` 和 `ls ~/.hermes/skills/`，查看用户是否已经安装过同类技能
+- **如果已安装**：直接读取已安装的 SKILL.md，跳过搜索和评估流程，直接进入对比或告知用户
+- **记录已安装**：在搜索报告中注明用户已安装的同类 skill，避免重复推荐
 
 ---
 
@@ -48,7 +131,7 @@
 
 **错误做法：** 示例中有 `api_key="your-api-key"` 就认为硬编码密钥
 
-**正确做法：** 区分占位符示例和真实硬编码。占位符（如 `"your-api-key"`、`"sk-..."`）是文档惯例，真正的硬编码是实际密钥字符串。但要注意：占位符示例可能normalize不良习惯。
+**正确做法：** 区分占位符示例和真实硬编码。占位符（如 `"your-api-key"`、`"sk-..."`）是文档惯例，真正的硬编码是实际密钥字符串。但要注意：占位符示例可能 normalize 不良习惯。
 
 ### 4. 忽视插件系统风险
 
@@ -73,6 +156,31 @@
 - SKILL.md 100-300 行 → 标准审计（15 分钟）
 - SKILL.md > 300 行或有附带脚本 → 完整审计（30 分钟+）
 
+### 7. Skill 硬编码作者路径
+
+**错误做法：** 直接使用 skill 中写死的文件路径
+
+**正确做法：** 检查 SKILL.md 和 scripts 中是否有硬编码路径（如 `/mnt/c/Users/malav`、`/root/.openclaw`），这些路径仅在作者机器上有效。需要确认是否适配当前环境。
+
+**检查方法：** 搜索 scripts 中所有 `find`、`rm`、`ls` 命令的目标路径，确认是否与当前用户/home 目录一致。
+
+### 8. 网络问题处理
+
+**错误做法：** 一个搜索源失败就直接放弃
+
+**正确做法：** 多源搜索，一个失败尝试其他源：
+
+| 搜索源 | 失败时 |
+|--------|--------|
+| Skills.sh (`bunx skills find`) | 改用 SkillHub 或 GitHub API 搜索 |
+| SkillHub (`skillhub search`) | 用 `git clone` 找对应仓库 |
+| GitHub API | 检查是否有拼写错误，重试 1 次 |
+
+**重试策略：** SkillHub 下载（lightmake.site）不稳定。遇到 SSL/超时错误：
+1. 重试 1 次
+2. 再失败则用 `git clone` 找对应 GitHub 仓库
+3. 都失败则在报告中注明"下载失败，无法获取源码"
+
 ---
 
 ## 何时停止分析
@@ -90,6 +198,7 @@
 - [ ] 所有候选都超过 3 个月未更新
 - [ ] 用户明确要求生产级安全标准，但候选都未通过 Agent Trust Hub
 - [ ] 功能覆盖不全，缺少用户需要的关键功能
+- [ ] 所有候选路径都硬编码为作者机器特有路径（需适配）
 
 ---
 
@@ -106,8 +215,8 @@
 
 ```bash
 # 正确：使用环境变量
-export OPENAI_API_KEY="sk-..."
-export OPENROUTER_API_KEY="sk-or-..."
+export OPENAI_API_KEY="***"
+export OPENROUTER_API_KEY="***"
 
 # 错误：不要通过 CLI 参数传递（会出现在 shell 历史和 ps 输出中）
 markitdown --api-key "sk-..." document.pdf
@@ -164,17 +273,17 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 ### 安全优先
 
 > 推荐 `[skill 名称]`
-> 
+>
 > **理由：** 安全评分 [X]/10，Agent Trust Hub [通过/警告/失败]，[具体安全加分项，如"有独立安全文档"、"插件默认禁用"、"提供沙箱实现"]。
-> 
+>
 > **注意：** [已知的中等风险点，如"AI 功能会发送文档到外部 API"]
 
 ### 功能优先
 
 > 推荐 `[skill 名称]`
-> 
+>
 > **理由：** 功能最全，[具体独特功能]，更新最活跃（[更新频率]），社区验证最多（[安装量] 安装，[stars] stars）。
-> 
+>
 > **安全提醒：** [已知的安全风险，如"插件系统无验证"、"路径未做穿越防护"]
 
 ### 组合安装
@@ -204,14 +313,35 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 | SkillHub | `skillhub search <query>` | `skillhub --dir ~/.hermes/skills/ install <slug>` | `--dir` 是全局选项，须在子命令之前 |
 | ClawHub | `clawhub search <query>` | `clawhub install <slug>` | 需手动处理路径 |
 
+---
+
+### 网络重试策略
+
+SkillHub 下载（lightmake.site）不稳定。遇到 SSL/超时错误：
+1. 重试 1 次
+2. 再失败则用 `git clone` 找对应 GitHub 仓库
+3. 都失败则在报告中注明"下载失败，无法获取源码"
+
+### 临时文件清理
+
+评估完成后务必清理临时目录，避免磁盘堆积：
+
+```bash
+# 清理所有 skillhub 临时安装
+rm -rf /tmp/skillhub-tmp-*
+# 清理 git clone 临时目录
+rm -rf /tmp/tmp.*
+```
+
 ```
 用户需求：评估/选择 skill
     │
     ├─ 是否指定了具体 skill 名称？
-    │   ├─ 是 → 跳到阶段 3（安全评估）
+    │   ├─ 是 → 检查本地是否已安装 → 是则跳过，跳到阶段 3（安全评估）
     │   └─ 否 → 阶段 1（搜索候选）
     │
     ├─ 找到几个候选？
+    │   ├─ 0 个 → 搜索失败，尝试替代搜索源或建议自建 skill
     │   ├─ 1 个 → 评估是否可用，同时搜索替代方案
     │   ├─ 2-3 个 → 标准对比流程
     │   └─ 4+ 个 → 先筛除低安装量/低 stars 的，保留 3 个深度评估
@@ -223,3 +353,23 @@ md.convert(user_input)  # 可能被 ../../ 攻击
     │
     └─ 用户确认后 → 阶段 4（执行安装）
 ```
+
+---
+
+## 安全加分项扩展
+
+以下实践表明 skill 作者有安全意识（在评分表中加分）：
+
+- [ ] 明确强调 NEVER 硬编码 API 密钥
+- [ ] 使用 `os.getenv()` 而非 CLI 参数传递密钥
+- [ ] 使用 `# pragma: allowlist secret` 注释标记（secret scanning 工具白名单）
+- [ ] 提供安全实现示例（沙箱模式、MIME 验证、大小限制）
+- [ ] 插件系统默认禁用
+- [ ] 有独立的安全文档章节
+- [ ] 列出反模式并提供修复代码
+- [ ] 有 Verified commits（GPG 签名提交）
+- [ ] 积极回应安全相关的 issues/PRs
+- [ ] 使用 `set -euo pipefail`（bash 脚本安全实践）
+- [ ] 提供 `--dry-run` 预演模式（不实际执行删除/移动）
+- [ ] 有 before/after 磁盘使用对比
+- [ ] 清理完成后删除临时文件

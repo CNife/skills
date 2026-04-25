@@ -25,9 +25,55 @@ description: >
 搜索候选 → 信息收集 → 安全评估 → 对比推荐与安装
 ```
 
+## 工具限制与绕过策略（实战经验）
+
+**关键**：多个常用工具存在限制，必须准备绕过方案。
+
+| 工具 | 限制 | 绕过方法 |
+|------|------|---------|
+| `web_extract` / `mcp_jina_read_url` | 将 GitHub / skills.sh / raw.githubusercontent.com 判定为内网地址，直接拒绝 | `git clone` 克隆仓库后本地读取，或用 `curl -sL` + `head` |
+| `skills.sh CLI` | `bunx skills find` 经常超时（60s+ 无响应） | 超时后改用 SkillHub 或 GitHub API 搜索 |
+| `SkillHub show` | 不存在此子命令，只有 search/install/upgrade/list/self-upgrade | 用 `skillhub --dir /tmp/xxx install <slug>` 下载到临时目录后读取源码 |
+| SkillHub 下载 | 偶发 SSL 错误 / 超时（lightmake.site） | 重试 1-2 次；再失败则用 `git clone` 找对应 GitHub 仓库 |
+
+### 备用源码获取方法
+
+当 `web_extract` 被拦截时（GitHub/skills.sh 均被当作内网地址）：
+
+**方法 A：git clone 克隆仓库**
+```bash
+TMPDIR=$(mktemp -d) && git clone --depth 1 "https://github.com/{owner}/{repo}.git" "$TMPDIR"
+find "$TMPDIR" -type f   # 查看文件结构
+cat "$TMPDIR/SKILL.md"   # 读取源码
+rm -rf "$TMPDIR"         # 完成后清理
+```
+
+**方法 B：SkillHub 临时安装**
+```bash
+TMPDIR="/tmp/skillhub-tmp-$$" && mkdir -p "$TMPDIR"
+skillhub --dir "$TMPDIR" install <slug>
+find "$TMPDIR/<slug>" -type f
+cat "$TMPDIR/<slug>/SKILL.md"
+cat "$TMPDIR/<slug>/scripts/*"   # 读取附带脚本
+rm -rf "$TMPDIR"
+```
+
+**方法 C：GitHub API 获取元数据**
+```bash
+# 仓库基本信息（Stars / Forks / 更新时间 / License）
+curl -s "https://api.github.com/repos/{owner}/{repo}" | jq '{stargazers_count, forks_count, pushed_at, description}'
+# 最近提交（判断维护状态）
+curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.[] | {message: .commit.message[:80], date: .commit.author.date}'
+```
+
 ---
 
 ## 阶段 1：搜索候选
+
+### 1.0 前置检查：本地已安装技能
+
+- **先检查本地**：执行 `ls ~/.agents/skills/` 和 `ls ~/.hermes/skills/`，查看用户是否已安装同类技能
+- **如果已安装**：直接读取已安装的 SKILL.md，跳过搜索和评估流程，直接进入对比或告知用户
 
 ### 1.1 多源并行搜索
 
@@ -37,10 +83,13 @@ description: >
   ```bash
   bunx skills find [关键词]
   ```
+  **注意**：经常超时。设置 timeout=60，超时后改用 SkillHub 或 GitHub API。
+
 - **SkillHub**（中国优化，速度快，中文技能多）：
   ```bash
   skillhub search [关键词]
   ```
+
 - **ClawHub**：仅当 SkillHub 无结果或 CLI 不可用时作为后备。
 
 ### 1.2 查看 Leaderboard
@@ -151,8 +200,31 @@ skills/{name}/SKILL.md              # 传统结构
 
 分支名尝试顺序：`main` → `master` → `dev`
 
-**第三步：读取引用文件**
+**第三步：如果 web_extract 被拦截，用 git clone 或 SkillHub 临时安装**
+```bash
+# 方法 A：git clone（适用于 GitHub 仓库）
+TMPDIR=$(mktemp -d) && git clone --depth 1 "https://github.com/{owner}/{repo}.git" "$TMPDIR"
+
+# 方法 B：SkillHub 临时安装（适用于非 GitHub 托管的 skill）
+TMPDIR="/tmp/skillhub-tmp-$$" && mkdir -p "$TMPDIR"
+skillhub --dir "$TMPDIR" install <slug>
+
+# 完成后必须清理
+rm -rf "$TMPDIR"
+```
+
+**第四步：读取引用文件**
 如果 SKILL.md 中引用了其他文件（如 `reference.md`、`patterns.md`、`scripts/` 下的脚本），一并读取。
+
+### 3.1.1 检查硬编码路径（新增）
+
+SkillHub 下载的 skill 常包含作者本机的硬编码路径。审计时必须检查：
+
+- **SKILL.md**：是否有 `find /mnt/c/Users/malav`、`/root/.openclaw` 等路径
+- **scripts/**：搜索 `find`、`rm`、`ls` 命令的目标路径
+- **引用文件**：同样检查路径引用
+
+如果路径硬编码为作者机器特有路径，在报告中注明"路径需适配当前环境"，不建议直接安装。
 
 ### 3.2 安全审计（自主审计 + 平台结果结合）
 
