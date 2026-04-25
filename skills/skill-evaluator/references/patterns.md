@@ -9,8 +9,6 @@
 | `web_extract` / `mcp_jina_read_url` | 将 GitHub / skills.sh / raw.githubusercontent.com 判定为内网地址，直接拒绝访问 | `git clone` 克隆仓库后本地读取，或用 `curl -sL` + `head` 读取 Raw 文件 |
 | `skills.sh CLI` | `bunx skills find` 经常超时（60s+ 无响应） | 等超时后改用 SkillHub 搜索或 GitHub API 搜索 |
 | `SkillHub show` | 不存在此子命令，SkillHub CLI 只有 search/install/upgrade/list/self-upgrade | 用 `skillhub --dir /tmp/xxx install <slug>` 下载到临时目录后读取源码 |
-| SkillHub 下载 | 偶发 SSL 错误 / 超时（lightmake.site） | 重试 1-2 次；再失败则用 `git clone` 找对应 GitHub 仓库 |
-| GitHub Raw URL | 同上，被 web_extract 拦截 | 用 `git clone` 或 `curl -sL` 代替 |
 
 ### `git clone` 源码获取（核心备用方案）
 
@@ -80,12 +78,11 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 
 | 信息类型 | 来源 | URL 模式 |
 |---------|------|---------|
-| skill 功能详情 | skills.sh | `https://skills.sh/{owner}/{repo}/{skill-name}` |
-| 安全审计结果 | skills.sh 安全页面 | 同上，查看底部安全评估 |
+| skill 功能详情 + 安全审计 | GitHub 仓库主页 | `https://github.com/{owner}/{repo}` |
 | Stars/Forks/Issues | GitHub 仓库主页 | `https://github.com/{owner}/{repo}` |
 | 最近提交日期 | GitHub API | `https://api.github.com/repos/{owner}/{repo}/commits?per_page=5` |
-| SKILL.md 源码 | GitHub Raw | `https://raw.githubusercontent.com/{owner}/{repo}/main/{skill-path}/SKILL.md` |
-| 引用文件源码 | GitHub Raw | `https://raw.githubusercontent.com/{owner}/{repo}/main/{skill-path}/{filename}` |
+| SKILL.md 源码 | git clone（Skills.sh 技能）| `git clone --depth 1 https://github.com/{owner}/{repo}.git` |
+| SKILL.md 源码 | SkillHub 临时安装 | `skillhub --dir /tmp/xxx install <slug>` |
 | 仓库提交历史 | GitHub Commits 页 | `https://github.com/{owner}/{repo}/commits/main` |
 
 ### 并行执行原则
@@ -94,16 +91,6 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 - 多个 skill 的源码读取可并行
 - 多个 skill 的安全审计可并行
 - `git clone` 和 `curl` API 请求可并行
-
----
-
-## 阶段 1 前置检查：本地已安装技能
-
-- **先检查本地**：执行 `ls ~/.agents/skills/` 和 `ls ~/.hermes/skills/`，查看用户是否已经安装过同类技能
-- **如果已安装**：直接读取已安装的 SKILL.md，跳过搜索和评估流程，直接进入对比或告知用户
-- **记录已安装**：在搜索报告中注明用户已安装的同类 skill，避免重复推荐
-
----
 
 ## 常见陷阱
 
@@ -172,9 +159,8 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 
 | 搜索源 | 失败时 |
 |--------|--------|
-| Skills.sh (`bunx skills find`) | 改用 SkillHub 或 GitHub API 搜索 |
+| Skills.sh (`bunx skills find`) | 改用 SkillHub 搜索 |
 | SkillHub (`skillhub search`) | 用 `git clone` 找对应仓库 |
-| GitHub API | 检查是否有拼写错误，重试 1 次 |
 
 **重试策略：** SkillHub 下载（lightmake.site）不稳定。遇到 SSL/超时错误：
 1. 重试 1 次
@@ -311,16 +297,6 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 |------|------|------|------|
 | Skills.sh | `bunx skills find <query>` | `bunx skills add <owner/repo@skill> -g -y` | Hermes 通过 external_dirs 自动发现 |
 | SkillHub | `skillhub search <query>` | `skillhub --dir ~/.hermes/skills/ install <slug>` | `--dir` 是全局选项，须在子命令之前 |
-| ClawHub | `clawhub search <query>` | `clawhub install <slug>` | 需手动处理路径 |
-
----
-
-### 网络重试策略
-
-SkillHub 下载（lightmake.site）不稳定。遇到 SSL/超时错误：
-1. 重试 1 次
-2. 再失败则用 `git clone` 找对应 GitHub 仓库
-3. 都失败则在报告中注明"下载失败，无法获取源码"
 
 ### 临时文件清理
 
@@ -354,22 +330,4 @@ rm -rf /tmp/tmp.*
     └─ 用户确认后 → 阶段 4（执行安装）
 ```
 
----
-
-## 安全加分项扩展
-
-以下实践表明 skill 作者有安全意识（在评分表中加分）：
-
-- [ ] 明确强调 NEVER 硬编码 API 密钥
-- [ ] 使用 `os.getenv()` 而非 CLI 参数传递密钥
-- [ ] 使用 `# pragma: allowlist secret` 注释标记（secret scanning 工具白名单）
-- [ ] 提供安全实现示例（沙箱模式、MIME 验证、大小限制）
-- [ ] 插件系统默认禁用
-- [ ] 有独立的安全文档章节
-- [ ] 列出反模式并提供修复代码
-- [ ] 有 Verified commits（GPG 签名提交）
-- [ ] 积极回应安全相关的 issues/PRs
-- [ ] 使用 `set -euo pipefail`（bash 脚本安全实践）
-- [ ] 提供 `--dry-run` 预演模式（不实际执行删除/移动）
-- [ ] 有 before/after 磁盘使用对比
-- [ ] 清理完成后删除临时文件
+（安全加分项完整列表见 `reference.md` 第七部分"安全加分项"）

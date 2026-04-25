@@ -6,21 +6,43 @@
       "eval_name": "single-skill-security-audit",
       "prompt": "帮我评估一下 markitdown 这个 skill 的安全性，看看能不能放心使用",
       "expected_output": "读取 markitdown skill 的 SKILL.md 源码，按安全检查清单逐项审计，给出安全评分和风险等级，列出发现的安全问题，最后给出是否推荐使用的建议",
-      "files": []
+      "files": [],
+      "expectations": [
+        "读取了 markitdown skill 的 SKILL.md 源码（通过 skills.sh、git clone 或其他方式）",
+        "给出了明确的安全评分（1-10 分）和风险等级",
+        "列出了至少 3 个安全检查维度（如 Prompt 注入、凭证处理、代码执行等）",
+        "给出了是否推荐使用的明确建议",
+        "如果存在高风险问题，明确警告用户"
+      ]
     },
     {
       "id": 2,
       "eval_name": "multi-skill-comparison",
       "prompt": "找一下 pdf 转 markdown 的 skills，对比下哪个好用",
       "expected_output": "搜索多个候选 skills，收集安装量/stars/更新频率/安全审计结果等信息，生成对比表格，按安全和功能两个维度给出推荐，提供安装命令",
-      "files": []
+      "files": [],
+      "expectations": [
+        "搜索到至少 2 个候选 skills",
+        "生成了综合对比表，包含安装量、stars、更新频率、安全评分等关键指标",
+        "对每个候选给出了安全评估",
+        "按安全和功能两个维度分别给出了推荐",
+        "提供了可直接复制执行的安装命令"
+      ]
     },
     {
       "id": 3,
       "eval_name": "safe-skill-recommendation",
       "prompt": "有没有安全的 skill 可以用来读取 PDF 文件？帮我装一个",
       "expected_output": "搜索相关 skills，重点进行安全评估，优先考虑通过 Agent Trust Hub 的选项，给出安全优先的推荐，用户确认后执行安装命令",
-      "files": []
+      "files": [],
+      "expectations": [
+        "搜索到至少 1 个相关 skill",
+        "重点进行了安全评估（而非仅比较功能）",
+        "优先考虑了 Agent Trust Hub 通过的选项",
+        "给出了安全优先的推荐",
+        "在用户确认后执行了安装命令",
+        "执行了安装后验证（检查路径、读取 SKILL.md 确认内容）"
+      ]
     }
   ]
 }
