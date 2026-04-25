@@ -16,6 +16,39 @@ description: 将当前会话内容总结到 Obsidian 工作日志或个人日记
 
 混合内容时，拆分后分别写入两个变体。
 
+## 首次配置
+
+脚本运行前需要配置文件 `~/.config/cnife-skills/obsidian-diary.json`。
+
+当脚本输出 `CONFIG_MISSING=true` 时，执行以下流程：
+
+1. **询问用户**每个 vault 的 Obsidian 根目录（本地绝对路径），例如：
+   - work vault：`/Users/cnife/Obsidian/工作` 或 `/mnt/c/Obsidian/工作`
+   - personal vault：`/Users/cnife/Obsidian/个人`
+2. 其余字段（`diary_dir`、`template`、`exclude_meta`）使用默认值，除非用户明确要求修改
+3. 用 Write 工具创建配置文件（先确保目录存在）：
+
+```json
+{
+  "vaults": {
+    "work": {
+      "base": "<用户提供的路径>",
+      "diary_dir": "工作日志",
+      "template": "日志模板.md",
+      "exclude_meta": ["AGENTS.md", "任务.md", "日志模板.md"]
+    },
+    "personal": {
+      "base": "<用户提供的路径>",
+      "diary_dir": "个人日记",
+      "template": "日记模板.md",
+      "exclude_meta": ["AGENTS.md"]
+    }
+  }
+}
+```
+
+4. 创建完成后重新运行脚本。
+
 ## 脚本
 
 所有文件系统操作通过 `scripts/obsidian-helper.py` 完成，脚本路径相对于本 skill 目录。
@@ -23,7 +56,7 @@ description: 将当前会话内容总结到 Obsidian 工作日志或个人日记
 **必须使用 uv 运行**（自动管理依赖）：
 
 ```bash
-uv run scripts/obsidian-helper.py --vault <work|personal> --action <action>
+uv run --script scripts/obsidian-helper.py --vault <work|personal> --action <action>
 ```
 
 可用 action：
@@ -39,7 +72,7 @@ uv run scripts/obsidian-helper.py --vault <work|personal> --action <action>
 ### 步骤 1：收集上下文（1 次调用）
 
 ```bash
-python3 scripts/obsidian-helper.py --vault <变体> --action context
+uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 ```
 
 输出包含五个段落，一次拿齐：
