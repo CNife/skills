@@ -79,3 +79,6 @@ Thumbs.db
 # uv
 .python-version
 uv.lock
+
+# Qwen Code
+.qwen/
