@@ -6,8 +6,14 @@
 # ]
 # ///
 
-"""生成 Hermes Agent 技能审计 Excel 报告（中文描述版）"""
+"""Hermes Agent 技能审计 — 生成 XLSX 并执行清理决策
 
+用法：
+    uv run audit.py             扫描技能 → 打印概览 → 生成 XLSX
+    uv run audit.py --apply     从 XLSX 读取决策 → 打印变更 → 确认后执行
+"""
+
+import argparse
 import json
 import shutil
 import sqlite3
@@ -16,11 +22,12 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
+# ── 路径 ────────────────────────────────────────────────────────────────────
 HERMES_HOME = Path.home() / ".hermes"
 SKILLS_DIR = HERMES_HOME / "skills"
 AGENTS_SKILLS = Path.home() / ".agents" / "skills"
@@ -28,7 +35,7 @@ STATE_DB = HERMES_HOME / "state.db"
 CONFIG_PATH = HERMES_HOME / "config.yaml"
 _EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups"))
 
-# ── 中文描述翻译表 ──────────────────────────────────────────────────────────
+# ── 中文描述映射 ─────────────────────────────────────────────────────────────
 CN_DESCRIPTIONS = {
     "agent-browser": "AI Agent 浏览器自动化工具，支持页面导航、表单填写、内容提取等操作",
     "airtable": "通过 curl 调用 Airtable REST API，管理记录增删改查与过滤",
@@ -90,17 +97,17 @@ CN_DESCRIPTIONS = {
     "guidance": "使用正则和文法控制 LLM 输出，保证生成有效的 JSON/XML/代码结构",
     "heartmula": "HeartMuLa：类似 Suno 的基于歌词+标签的歌曲生成",
     "hermes-agent": "Hermes Agent 使用与扩展完整指南：CLI 用法、配置、网关、工具、技能和功能",
-    "hermes-agent-daily-changelog": "自动抓取并总结 Hermes Agent 仓库最近 25 小时的 Git 提交变更，输出结构化中文汇报",
+    "hermes-agent-daily-changelog": "自动抓取并总结 Hermes Agent 仓库最近 25 小时的 Git 提交变更",
     "hermes-agent-skill-authoring": "编写仓库内联 SKILL.md：前置元数据、验证器、目录结构",
-    "hermes-file-structure": "Hermes Agent 文件结构指南：用户管理与自动管理文件、配置/记忆/人格位置",
-    "hermes-media-delivery": "在 Hermes Agent 中跨渠道正确发送媒体内容（图片、音频、视频、文件）的指南",
+    "hermes-file-structure": "Hermes Agent 文件结构指南：配置、记忆、人格文件位置",
+    "hermes-media-delivery": "Hermes Agent 中跨渠道正确发送媒体的指南",
     "hermes-skills": "Hermes Agent 技能安装、更新和管理指南",
-    "hermes-token-analysis": "通过本地代理服务器分析 Hermes Agent API 请求的 Token 消耗明细",
-    "hermes-usage-insights": "查询 Hermes Agent 汇总使用统计：Token 数量、缓存命中率、费用估算和活动趋势",
-    "hermes-webui-baremetal": "以裸金属 systemd 服务方式部署 hermes-webui（无容器），涵盖 bootstrap.py fork 的关键陷阱",
-    "hermes-webui-podman": "使用 Podman（无 root）部署和管理 hermes-webui，包含容器启动参数和 systemd 集成",
+    "hermes-token-analysis": "通过本地代理分析 Hermes Agent API Token 消耗明细",
+    "hermes-usage-insights": "查询 Hermes Agent 汇总使用统计：Token、缓存命中率、费用趋势",
+    "hermes-webui-baremetal": "裸金属 systemd 部署 hermes-webui，涵盖 bootstrap.py fork 陷阱",
+    "hermes-webui-podman": "Podman 部署 hermes-webui，含容器启动参数和 systemd 集成",
     "himalaya": "通过 IMAP/SMTP 管理邮件的 CLI 工具，支持列表、阅读、编写、回复、转发、搜索",
-    "hindsight-local-embedded-setup": "Hermes Agent（WSL/Linux）本地嵌入模式 Hindsight 记忆系统的排错和配置指南",
+    "hindsight-local-embedded-setup": "Hermes Agent 本地嵌入模式 Hindsight 记忆系统排错与配置",
     "hindsight-memory-setup": "配置和排错 Hermes Agent 本地嵌入模式的 Hindsight 记忆系统",
     "huggingface-hub": "HuggingFace hf CLI：搜索/下载/上传模型和数据集",
     "hunt": "在应用修复前定位错误、崩溃、异常行为和失败测试的根因",
@@ -132,12 +139,12 @@ CN_DESCRIPTIONS = {
     "obsidian": "在 Obsidian 知识库中阅读、搜索和创建笔记",
     "obsidian-bases": "创建和编辑 Obsidian Bases（.base 文件），支持视图、筛选器、公式和汇总",
     "obsidian-cli": "使用 Obsidian CLI 与知识库交互，支持阅读、创建、搜索和管理笔记",
-    "obsidian-diary": "将会话内容总结到 Obsidian 工作日志或个人日记中，工作相关用 work 变体，个人方向用 personal 变体",
+    "obsidian-diary": "将会话内容总结到 Obsidian 工作日志或个人日记中",
     "obsidian-markdown": "创建和编辑 Obsidian 风味 Markdown，支持 Wiki 链接、嵌入、Callout 和属性",
     "ocr-and-documents": "从 PDF/扫描件中提取文本（pymupdf、marker-pdf）",
-    "opencli-adapter-author": "为新站点编写 OpenCLI 适配器或为已有站点添加新命令，从框架搭建到测试完成的完整指南",
-    "opencli-autofix": "自动修复 OpenCLI 适配器故障，当 opencli 命令失败时引导诊断和修复",
-    "opencli-browser": "通过 opencli 驱动真实 Chrome 浏览器窗口：检查页面、填写表单、点击登录后的界面",
+    "opencli-adapter-author": "为新站点编写 OpenCLI 适配器或为已有站点添加新命令",
+    "opencli-autofix": "自动修复 OpenCLI 适配器故障",
+    "opencli-browser": "通过 opencli 驱动真实 Chrome 浏览器窗口",
     "opencli-usage": "OpenCLI 顶层使用指南，包含适配器发现、命令查找和工作流模式",
     "opencode": "委托编码任务给 OpenCode CLI（实现功能、PR 审查）",
     "opencode-primitives": "编写技能、插件、MCP 或配置驱动行为时参考 OpenCode 文档",
@@ -146,11 +153,11 @@ CN_DESCRIPTIONS = {
     "p5js": "p5.js 作品：生成艺术、着色器、交互、3D 图形",
     "paseo-install": "从源码在 WSL/Linux 上安装和配置 Paseo AI Agent 管理守护进程",
     "pdf": "PDF 文件处理技能：阅读、提取文本/表格、编辑、转换和生成 PDF",
-    "peft": "使用 LoRA、QLoRA 等 25+ 方法进行参数高效微调，适用于 7B-70B 大模型",
+    "peft": "使用 LoRA、QLoRA 等 25+ 方法进行参数高效微调",
     "peft-fine-tuning": "使用 LoRA、QLoRA 等 25+ 方法进行参数高效微调",
     "pixel-art": "像素艺术，支持 NES、Game Boy、PICO-8 等时代调色板",
     "plan": "计划模式：将 Markdown 计划写入 .hermes/plans/，不执行代码",
-    "playwright-best-practices": "Playwright 测试编写、修复不稳定测试、调试失败、实现 Page Object Model 的指南",
+    "playwright-best-practices": "Playwright 测试编写、修复不稳定测试、调试失败指南",
     "pokemon-player": "通过无头模拟器 + 内存读取游玩宝可梦",
     "polymarket": "查询 Polymarket：市场、价格、订单簿、历史数据",
     "popular-web-designs": "54 个真实设计系统（Stripe、Linear、Vercel）的 HTML/CSS 实现",
@@ -165,7 +172,7 @@ CN_DESCRIPTIONS = {
     "research-paper-writing": "撰写 NeurIPS/ICML/ICLR 级别的机器学习论文",
     "segment-anything": "SAM：通过点、框、掩码进行零样本图像分割",
     "segment-anything-model": "SAM：通过点、框、掩码进行零样本图像分割",
-    "service-guard": "跨平台服务监控工具，监控 WSL systemd 服务和 Windows 原生服务，检测隧道连接问题",
+    "service-guard": "跨平台服务监控，监控 WSL systemd 和 Windows 原生服务，检测隧道连接问题",
     "serving-llms-vllm": "vLLM：高吞吐 LLM 服务部署，OpenAI API 兼容，支持量化",
     "skill-creator": "创建、修改和改进技能，并评估技能性能",
     "skill-evaluator": "评估、比较、推荐、发现和安装 AI Agent 技能",
@@ -184,9 +191,9 @@ CN_DESCRIPTIONS = {
     "technical-svg-diagrams": "生成 Cloudflare 风格的简洁技术 SVG 图表",
     "test-driven-development": "TDD：强制 RED-GREEN-REFACTOR 流程，测试先于代码",
     "think": "将粗略想法转化为经验证的计划，编写代码前先确认结构",
-    "tushare": "面向中文自然语言的 Tushare 数据研究技能，支持 A股/指数/ETF/财务/资金流等场景",
+    "tushare": "面向中文自然语言的 Tushare 数据研究技能",
     "tushare-data": "面向中文自然语言的 Tushare 数据研究技能",
-    "tushare-finance": "获取中国金融市场数据（A股、港股、美股、基金、期货、债券），支持 220+ Tushare Pro 接口",
+    "tushare-finance": "获取中国金融市场数据，支持 220+ Tushare Pro 接口",
     "using-git-worktrees": "当功能开发需要与当前工作区隔离时使用 Git Worktree",
     "uv-package-manager": "使用 uv 包管理器进行快速 Python 依赖管理和虚拟环境",
     "vllm": "vLLM：高吞吐 LLM 服务部署，OpenAI API 兼容，支持量化",
@@ -194,7 +201,7 @@ CN_DESCRIPTIONS = {
     "webhook-subscriptions": "Webhook 订阅：事件驱动的 Agent 自动运行",
     "weights-and-biases": "W&B：记录 ML 实验、超参数搜索、模型注册表和仪表盘",
     "whisper": "OpenAI 通用语音识别模型，支持 99 种语言的转录、翻译和语言识别",
-    "windows-browser-control": "从 WSL 通过 Chrome DevTools Protocol 控制 Windows 浏览器（Edge、Chrome）",
+    "windows-browser-control": "从 WSL 通过 Chrome DevTools Protocol 控制 Windows 浏览器",
     "write": "去除 AI 写作痕迹，让文章读起来像自然的中文或英文",
     "writing-plans": "编写实现计划：小任务拆分、文件路径、代码结构",
     "wsl-memory-diagnostics": "WSL 内存问题诊断工作流，区分 WSL 内部使用与 Windows 主机消耗",
@@ -217,12 +224,12 @@ CN_DESCRIPTIONS = {
     "llm-wiki": "构建和查询互联的 Markdown 知识库",
     "manim-video": "Manim CE 动画：3Blue1Brown 风格的数学/算法视频",
     "maps": "通过 OpenStreetMap/OSRM 进行地理编码、POI、路线规划",
-    "mf26": "MF26 相关技能",
     "trf-fine-tuning": "TRL 微调：SFT、DPO、PPO、GRPO 和 Reward Modeling",
     "unsloth": "Unsloth：2-5 倍更快的 LoRA/QLoRA 微调，更少显存消耗",
 }
 
 
+# ── Hermes 内部 API ─────────────────────────────────────────────────────────
 def find_hermes_venv_python() -> Path | None:
     hermes_bin = shutil.which("hermes")
     if not hermes_bin:
@@ -267,10 +274,7 @@ for s in all_skills:
         source = 'builtin'
     else:
         source = 'local'
-    output[name] = {
-        'source': source,
-        'category': s.get('category'),
-    }
+    output[name] = {'source': source, 'category': s.get('category')}
 print(json.dumps(output))
 """,
             ],
@@ -296,30 +300,8 @@ def get_disabled_set() -> set[str]:
         return set()
 
 
-def get_description_from_skill_dir(skill_dir: str) -> str:
-    """Try to read description from SKILL.md frontmatter"""
-    try:
-        skill_md = Path(skill_dir) / "SKILL.md"
-        if not skill_md.exists():
-            return ""
-        content = skill_md.read_text(encoding="utf-8", errors="replace")
-        stripped = content.lstrip()
-        if stripped.startswith("---"):
-            end = stripped.find("---", 3)
-            if end != -1:
-                fm = yaml.safe_load(stripped[3:end])
-                if fm and "description" in fm:
-                    desc = fm["description"]
-                    if isinstance(desc, list):
-                        desc = " ".join(desc)
-                    return desc.strip().replace("\n", " ")
-    except Exception:
-        pass
-    return ""
-
-
+# ── 技能扫描 ─────────────────────────────────────────────────────────────────
 def scan_all_skills() -> dict[str, dict]:
-    _EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups"))
     skills = {}
 
     def scan_directory(base_dir: Path, is_external: bool = False):
@@ -344,7 +326,6 @@ def scan_all_skills() -> dict[str, dict]:
 
     registry = get_skill_registry()
     disabled = get_disabled_set()
-
     for name, info in skills.items():
         info["disabled"] = name in disabled
         if registry and name in registry:
@@ -353,16 +334,7 @@ def scan_all_skills() -> dict[str, dict]:
                 info["category"] = registry[name]["category"]
         else:
             info["source"] = "external" if info["is_external"] else "local"
-
-        # Get Chinese description
-        cn_desc = CN_DESCRIPTIONS.get(name, "")
-        if cn_desc:
-            info["description"] = cn_desc
-        else:
-            # Fallback: read from SKILL.md frontmatter
-            desc = get_description_from_skill_dir(info["dir"])
-            info["description"] = desc if desc else ""
-
+        info["description"] = CN_DESCRIPTIONS.get(name, "")
     return skills
 
 
@@ -398,14 +370,14 @@ def count_skill_calls() -> dict[str, dict]:
     return stats
 
 
+# ── XLSX 生成 ────────────────────────────────────────────────────────────────
 def format_source(source: str) -> str:
-    mapping = {
+    return {
         "builtin": "内置",
         "local": "本地创建",
         "hub": "skills.sh安装",
         "external": "外部共享",
-    }
-    return mapping.get(source, source)
+    }.get(source, source)
 
 
 def get_suggestion(name: str, info: dict, stats: dict | None) -> str:
@@ -421,32 +393,19 @@ def get_suggestion(name: str, info: dict, stats: dict | None) -> str:
         elif info["source"] == "external":
             return "⚠️ 外部共享，确认不影响其他 Agent 后再处理"
         return ""
-
     days_since = (
         (datetime.now().timestamp() - stats["last_seen"]) / 86400 if stats["last_seen"] else 999
     )
-
     if days_since <= 3:
         return "✅ 近 3 天使用中"
     elif days_since <= 7:
         return "✅ 近一周使用过"
     elif days_since <= 30:
         return "🟡 近一个月使用过"
-    else:
-        return "🟠 历史使用过"
+    return "🟠 历史使用过"
 
 
-def main():
-    print("📂 扫描技能...")
-    skills = scan_all_skills()
-    print(f"   找到 {len(skills)} 个技能")
-
-    print("📊 查询调用记录...")
-    call_stats = count_skill_calls()
-    print(f"   找到 {len(call_stats)} 个有调用记录的技能")
-
-    print("📝 生成 Excel...")
-
+def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
     wb = Workbook()
     ws = wb.active
     ws.title = "技能审计"
@@ -460,7 +419,6 @@ def main():
         top=Side(style="thin"),
         bottom=Side(style="thin"),
     )
-
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.fill = header_fill
@@ -468,19 +426,19 @@ def main():
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = thin_border
 
-    widths = [25, 14, 10, 60, 30, 12]
-    for i, w in enumerate(widths, 1):
+    for i, w in enumerate([25, 14, 10, 60, 30, 12], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
-    # Sort
     source_priority = {"builtin": 0, "hub": 1, "local": 2, "external": 3}
-
     all_items = []
     for name, info in skills.items():
         stat = call_stats.get(name)
         enabled = "禁用" if info.get("disabled") else "启用"
         suggestion = get_suggestion(name, info, stat)
-
+        if info["source"] == "builtin":
+            decision_default = "禁用" if info.get("disabled") else "启用"
+        else:
+            decision_default = "保留"
         all_items.append(
             {
                 "name": name,
@@ -490,9 +448,9 @@ def main():
                 "suggestion": suggestion,
                 "disabled": info.get("disabled", False),
                 "source_raw": info["source"],
+                "decision_default": decision_default,
             }
         )
-
     all_items.sort(
         key=lambda x: (
             1 if x["disabled"] else 0,
@@ -507,25 +465,18 @@ def main():
     fill_active = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
 
     for row_idx, item in enumerate(all_items, 2):
-        # Builtin: dropdown = 启用/禁用, default = current state
-        # Others: dropdown = 保留/删除, default = 保留
-        if item["source_raw"] == "builtin":
-            decision_default = "启用" if not item["disabled"] else "禁用"
-        else:
-            decision_default = "保留"
         values = [
             item["name"],
             item["source"],
             item["enabled"],
             item["description"],
             item["suggestion"],
-            decision_default,
+            item["decision_default"],
         ]
         for col_idx, val in enumerate(values, 1):
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
             cell.border = thin_border
             cell.alignment = Alignment(vertical="center", wrap_text=True)
-
             if item["disabled"]:
                 cell.fill = fill_disabled
             elif "建议删除" in item["suggestion"] or "建议卸载" in item["suggestion"]:
@@ -535,8 +486,6 @@ def main():
             elif "使用" in item["suggestion"]:
                 cell.fill = fill_active
 
-    # Data validation: dropdown for "我的决策" column (F)
-    # Builtin: 保留/禁用; Others: 保留/删除
     dv_builtin = DataValidation(type="list", formula1='"启用,禁用"', allow_blank=True)
     dv_builtin.error = "请选择「启用」或「禁用」"
     dv_builtin.errorTitle = "无效输入"
@@ -548,19 +497,171 @@ def main():
     ws.add_data_validation(dv_other)
 
     for row_idx, item in enumerate(all_items, 2):
-        cell_ref = f"F{row_idx}"
         if item["source_raw"] == "builtin":
-            dv_builtin.add(cell_ref)
+            dv_builtin.add(f"F{row_idx}")
         else:
-            dv_other.add(cell_ref)
+            dv_other.add(f"F{row_idx}")
 
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:F{len(all_items) + 1}"
 
-    output_path = str(Path.home() / "hermes-workspace" / "hermes-skills" / "技能审计报告.xlsx")
+    output_path = str(Path.cwd() / "技能审计报告.xlsx")
     wb.save(output_path)
-    print(f"\n✅ Excel 已保存: {output_path}")
-    print(f"   共 {len(all_items)} 个技能，全部描述已转为中文")
+    return output_path
+
+
+# ── 读取决策 ─────────────────────────────────────────────────────────────────
+def read_decisions(xlsx_path: str) -> list[dict]:
+    wb = load_workbook(xlsx_path)
+    ws = wb.active
+    changes = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        name, source, enabled, _desc, _suggestion, decision = row
+        if not name:
+            continue
+        decision = str(decision).strip() if decision else ""
+        is_builtin = source == "内置"
+        default = (
+            "禁用" if (is_builtin and enabled == "禁用") else ("启用" if is_builtin else "保留")
+        )
+        if decision != default and decision:
+            changes.append(
+                {
+                    "name": name,
+                    "source": source,
+                    "enabled": enabled,
+                    "decision": decision,
+                    "is_builtin": is_builtin,
+                }
+            )
+    return changes
+
+
+def print_changes(changes: list[dict]):
+    delete_skills = [c for c in changes if c["decision"] == "删除"]
+    disable_skills = [c for c in changes if c["decision"] == "禁用" and c["is_builtin"]]
+    enable_skills = [c for c in changes if c["decision"] == "启用" and c["is_builtin"]]
+
+    if not changes:
+        print("无变更。所有技能决策保持默认值。")
+        return False
+
+    print("=" * 50)
+    print("技能审计 — 待执行变更")
+    print("=" * 50)
+    if delete_skills:
+        print(f"\n🗑️  删除 {len(delete_skills)} 个本地技能:")
+        for c in delete_skills:
+            print(f"     {c['name']}")
+    if disable_skills:
+        print(f"\n⚠️  禁用 {len(disable_skills)} 个内置技能:")
+        for c in disable_skills:
+            print(f"     {c['name']}")
+    if enable_skills:
+        print(f"\n✅  启用 {len(enable_skills)} 个内置技能:")
+        for c in enable_skills:
+            print(f"     {c['name']}")
+    print("\n" + "=" * 50)
+    return True
+
+
+def apply_changes(changes: list[dict], skills: dict[str, dict]):
+    delete_skills = [c["name"] for c in changes if c["decision"] == "删除"]
+    disable_skills = [c["name"] for c in changes if c["decision"] == "禁用" and c["is_builtin"]]
+    enable_skills = [c["name"] for c in changes if c["decision"] == "启用" and c["is_builtin"]]
+
+    # Backup config.yaml
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_config = CONFIG_PATH.with_name(f"config.yaml.bak.{ts}")
+    shutil.copy2(CONFIG_PATH, backup_config)
+    print(f"\n✅ config.yaml 已备份: {backup_config}")
+
+    # Backup skill directories
+    backup_dir = SKILLS_DIR / ".audit-backups" / f"cleanup-{ts}"
+    if delete_skills:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        for name in delete_skills:
+            info = skills.get(name, {})
+            dir_path = info.get("dir", "")
+            if dir_path and Path(dir_path).exists():
+                shutil.copytree(dir_path, backup_dir / name, dirs_exist_ok=True)
+                shutil.rmtree(dir_path)
+                print(f"  🗑️  已删除: {name}")
+            else:
+                print(f"  ⚪ 目录不存在: {name}")
+
+    # Update config.yaml disabled list
+    with open(CONFIG_PATH) as f:
+        config = yaml.safe_load(f) or {}
+    config.setdefault("skills", {})
+    existing_disabled = set(config["skills"].get("disabled", []))
+    new_disabled = (existing_disabled | set(disable_skills)) - set(enable_skills)
+    if new_disabled != existing_disabled:
+        config["skills"]["disabled"] = sorted(new_disabled)
+        with open(CONFIG_PATH, "w") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        if disable_skills:
+            print(f"  ⚠️  已禁用: {', '.join(disable_skills)}")
+        if enable_skills:
+            print(f"  ✅  已启用: {', '.join(enable_skills)}")
+
+    print(f"\n✅ 执行完成。备份目录: {backup_dir if delete_skills else '（无）'}")
+
+
+# ── 主函数 ───────────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser(description="Hermes Agent 技能审计工具")
+    parser.add_argument("--apply", action="store_true", help="从 XLSX 读取决策并执行清理")
+    parser.add_argument(
+        "--xlsx", type=str, default="技能审计报告.xlsx", help="XLSX 文件路径（默认当前目录）"
+    )
+    args = parser.parse_args()
+
+    if args.apply:
+        xlsx_path = Path(args.xlsx)
+        if not xlsx_path.exists():
+            print(f"❌ 未找到 XLSX 文件: {xlsx_path}")
+            print("   请先生成 XLSX: uv run audit.py")
+            return
+
+        print("📖 读取决策...")
+        changes = read_decisions(str(xlsx_path))
+        should_proceed = print_changes(changes)
+        if not should_proceed:
+            return
+
+        print("继续执行前请确认 [y/N]: ", end="", flush=True)
+        try:
+            confirm = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            confirm = "n"
+        if confirm != "y":
+            print("已取消，未执行任何操作。")
+            return
+
+        print("\n🔧 正在执行...")
+        skills = scan_all_skills()
+        apply_changes(changes, skills)
+        return
+
+    # Default: scan + generate XLSX
+    print("📂 扫描技能...")
+    skills = scan_all_skills()
+    call_stats = count_skill_calls()
+
+    active = sum(1 for name, s in skills.items() if call_stats.get(name) and not s["disabled"])
+    zero = sum(1 for name, s in skills.items() if not call_stats.get(name) and not s["disabled"])
+    disabled_count = sum(1 for s in skills.values() if s["disabled"])
+
+    print(
+        f"   共 {len(skills)} 个技能 | {active} 个在用 | {zero} 个零调用 | {disabled_count} 个已禁用"
+    )
+
+    print("📊 生成 XLSX...")
+    out = generate_xlsx(skills, call_stats)
+    print(f"   ✅ {out}")
+    print("\n下一步：在 Excel 中打开并填写「我的决策」列，然后运行:")
+    print("   uv run audit.py --apply")
 
 
 if __name__ == "__main__":
