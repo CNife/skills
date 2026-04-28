@@ -1,0 +1,23 @@
+{
+  "skill_name": "opencode-permission",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "允许 kubectl get * 执行，不需要每次确认",
+      "expected_output": "在 opencode.jsonc 的 permission.bash 中添加了 \"kubectl get *\": \"allow\" 规则，原有注释完整保留",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我把 git push 相关的命令设为每次询问确认，但 git commit 相关的自动允许",
+      "expected_output": "添加了 \"git push *\": \"ask\" 和 \"git commit *\": \"allow\" 两条规则",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "查看一下我现在有哪些 bash 权限规则",
+      "expected_output": "列出 permission.bash 下所有规则及其动作，格式清晰可读",
+      "files": []
+    }
+  ]
+}
