@@ -6,11 +6,14 @@ description: >
   authoritative source for skill classification (hub/builtin/local/external),
   combined with filesystem scanning for directory paths. Queries state.db for
   skill_view/skill_manage calls, calculates time-decayed heat scores using
-  exponential decay (Reddit/HN style), and generates cleanup recommendations
-  with automatic backup. Smart filtering: already-disabled skills are not
-  re-suggested for cleanup. Use when the user asks about Hermes skill usage
-  statistics, wants to clean up unused Hermes skills, needs to disable low-usage
-  skills, or mentions "技能审计", "清理技能", "不用的技能", "哪些技能可以删",
+  exponential decay (Reddit/HN style), generates terminal audit report AND
+  an interactive XLSX with Chinese descriptions, dropdown decision columns,
+  and color-coded recommendations. Supports decision-based execution:
+  read decisions from XLSX and apply (delete/disable/enable) accordingly.
+  Smart filtering: already-disabled skills are not re-suggested for cleanup.
+  Use when the user asks about Hermes skill usage statistics, wants to clean
+  up unused Hermes skills, needs to disable low-usage skills, or mentions
+  "技能审计", "清理技能", "不用的技能", "哪些技能可以删",
   "skill audit", "unused skills", "cleanup skills", "remove skills", "skill heat",
   "技能热度", "技能使用频率", "技能调用历史", "audit hermes skills". This skill
   is specific to Hermes Agent — do not use for other agents. Make sure to load
@@ -23,6 +26,10 @@ description: >
 审计 Hermes Agent 已安装技能的使用频率，识别长期不使用的技能并安全清理。
 
 通过 hermes 内部 API（`_find_all_skills`、`_read_manifest`、`HubLockFile`）获取权威的技能来源分类（hub/builtin/local/external），结合文件系统扫描定位实际目录路径。
+
+本技能提供两个输出通道：
+1. **终端报告** — 直接打印热度排名和清理建议
+2. **XLSX 表格** — 含中文描述、下拉菜单决策列、颜色标记，用户填写后执行
 
 ## 核心原理
 
@@ -51,41 +58,58 @@ score = Σ e^(-λ × days_ago)
 
 ## 使用方法
 
-**必须使用 uv 运行脚本**（自动管理依赖）：
+**所有脚本必须使用 uv 运行**（自动管理依赖）：
+
+### 第一步：运行终端审计
 
 ```bash
 uv run ~/.hermes/skills/audit-hermes-agent-skills/scripts/audit-hermes-agent-skills.py
 ```
 
-### 第一步：运行审计（默认 dry-run）
+生成终端审计报告，列出热度排名、零调用技能列表、清理建议。
+
+### 第二步：生成 XLSX 表格
 
 ```bash
-uv run audit-hermes-agent-skills.py
+uv run ~/.hermes/skills/audit-hermes-agent-skills/scripts/generate_audit_xlsx.py
 ```
 
-生成审计报告，列出所有技能的热度排名、零调用技能列表、清理建议。
+生成 `技能审计报告.xlsx` 到当前目录，包含：
 
-### 第二步：审查报告
+| 列 | 说明 |
+|----|------|
+| 技能名称 | Hermes 技能名 |
+| 来源 | 内置 / 本地创建 / skills.sh安装 / 外部共享 |
+| 启用状态 | 启用 / 禁用 |
+| 描述（中文） | 中文一句话描述（含 180+ 预置翻译） |
+| 审计建议 | 活跃/常用/偶尔 或 建议删除/禁用 |
+| 我的决策 | 下拉框：内置=启用/禁用，其他=保留/删除 |
 
-报告分组展示：
-- 🔥🟢🟡🟠⚪ 有调用的技能（按热度排序）
-- 🗑️ 建议删除的 external/standalone 零调用技能
-- ⚠️ 建议禁用的 builtin 零调用技能（按分类分组）
+颜色标记：🟢绿色=活跃，🔴粉色=建议删除，🟠橙色=建议禁用，⚪灰色=已禁用。
 
-### 第三步：确认清理
+### 第三步：用户填写决策
 
-用户确认后执行实际清理：
+在 Excel 中打开，通过「我的决策」列的下拉框标记每个技能的处理方式。默认值：
+- **内置技能**：启用中=「启用」，已禁用=「禁用」
+- **其他技能**：默认「保留」
+
+### 第四步：读取变更并执行
 
 ```bash
-uv run audit-hermes-agent-skills.py --execute
+uv run ~/.hermes/skills/audit-hermes-agent-skills/scripts/read_decisions.py
 ```
 
-清理前自动备份所有目标技能到 `~/.hermes/skills/.audit-backups/skills-backup-<timestamp>.tar.gz`。
+读取 XLSX 中的「我的决策」列，汇总与默认值不同的变更：
+- 标记「删除」的本地技能 → 备份后删除目录
+- 标记「禁用」的内置技能 → 追加到 config.yaml disabled
+- 标记「启用」的内置技能 → 从 config.yaml disabled 移除
+
+手动按汇总执行（自动备份 config.yaml 和目标目录）。
 
 ## 清理策略
 
 ### 本地技能（local）
-直接删除目录。
+直接删除目录。backup 目录在 `~/.hermes/skills/.audit-backups/`。
 
 ### Hub 技能（hub）
 通过 `hermes skills uninstall <name>` 卸载，同时清理 Hub 锁定文件记录。
@@ -94,7 +118,7 @@ uv run audit-hermes-agent-skills.py --execute
 位于 `~/.agents/skills/`，所有 Agent（Claude Code、OpenCode、Cursor 等）共用。删除前请确认不影响其他 Agent。
 
 ### 内置技能（builtin）
-通过添加到 `~/.hermes/config.yaml` 的 `skills.disabled` 列表来禁用。
+通过添加到 `~/.hermes/config.yaml` 的 `skills.disabled` 列表来禁用。从 disabled 列表中移除即可重新启用。
 
 > ⚠️ 已禁用的零调用技能不会重复建议。如果某个 builtin 已经在 `skills.disabled` 中，审计报告会将其标记为"无需操作"。
 
@@ -147,8 +171,18 @@ ls -la ~/.hermes/skills/.audit-backups/
 tar -xzf ~/.hermes/skills/.audit-backups/skills-backup-<timestamp>.tar.gz <skill-name> -C ~/.hermes/skills/
 ```
 
+## XLSX 脚本说明
+
+`generate_audit_xlsx.py` 使用 openpyxl 并内嵌了 180+ 个技能的中文描述翻译，依赖：
+- pyyaml>=6.0（读取 SKILL.md frontmatter 和 config.yaml）
+- openpyxl>=3.1（生成 xlsx）
+
+运行方式与主审计脚本相同：`uv run generate_audit_xlsx.py`。
+
 ## 注意事项
 
 - dry-run 模式不修改任何文件
 - 使用 `--execute` 参数才会实际清理
 - config.yaml 修改会合并现有 disabled 列表而非覆盖
+- 修改 config.yaml 前必须备份（`cp config.yaml config.yaml.bak.$(date +%Y%m%d%H%M%S)`）
+- 删除目录前先备份到 `.audit-backups/`

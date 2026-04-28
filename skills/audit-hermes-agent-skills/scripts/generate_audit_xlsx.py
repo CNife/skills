@@ -1,0 +1,567 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pyyaml>=6.0",
+#     "openpyxl>=3.1",
+# ]
+# ///
+
+"""生成 Hermes Agent 技能审计 Excel 报告（中文描述版）"""
+
+import json
+import shutil
+import sqlite3
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
+
+HERMES_HOME = Path.home() / ".hermes"
+SKILLS_DIR = HERMES_HOME / "skills"
+AGENTS_SKILLS = Path.home() / ".agents" / "skills"
+STATE_DB = HERMES_HOME / "state.db"
+CONFIG_PATH = HERMES_HOME / "config.yaml"
+_EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups"))
+
+# ── 中文描述翻译表 ──────────────────────────────────────────────────────────
+CN_DESCRIPTIONS = {
+    "agent-browser": "AI Agent 浏览器自动化工具，支持页面导航、表单填写、内容提取等操作",
+    "airtable": "通过 curl 调用 Airtable REST API，管理记录增删改查与过滤",
+    "apple-notes": "通过 memo CLI 管理 Apple 备忘录：创建、搜索、编辑",
+    "apple-reminders": "通过 remindctl 管理 Apple 提醒事项：添加、列表、完成",
+    "architecture-diagram": "深色主题 SVG 架构/云/基础设施图，输出为 HTML",
+    "arxiv": "按关键词、作者、分类或 ID 搜索 arXiv 论文",
+    "ascii-art": "ASCII 艺术：pyfiglet、cowsay、boxes、图片转字符画",
+    "ascii-video": "ASCII 视频：将视频/音频转换为彩色 ASCII MP4/GIF",
+    "audiocraft": "AudioCraft：MusicGen 文生音乐、AudioGen 文生音效",
+    "audiocraft-audio-generation": "AudioCraft：MusicGen 文生音乐、AudioGen 文生音效",
+    "axolotl": "Axolotl：通过 YAML 配置进行 LoRA/DPO/GRPO 等 LLM 微调",
+    "backtest-expert": "量化回测策略开发与验证专家，覆盖开发、测试、压力测试与归因分析",
+    "blogwatcher": "通过 blogwatcher-cli 监控博客和 RSS/Atom 订阅源",
+    "camofox-browser": "基于 Camoufox 的反检测无头浏览器自动化服务，绕过 Google 等网站的机器人检测",
+    "check": "实现后审查代码 diff，自动修复安全问题，并针对大 diff 运行安全与架构审查",
+    "chezmoi-workflows": "使用 chezmoi 管理 dotfiles 备份与同步",
+    "clash-verge-rev": "从 WSL 管理 Clash Verge Rev 代理客户端，修改 TUN 模式、代理设置等配置并重启",
+    "claude-code": "委托编码任务给 Claude Code CLI（实现功能、创建 PR）",
+    "claude-design": "设计一次性 HTML 作品（落地页、演示文稿、原型）",
+    "clawdchat": "ClawdChat AI Agent 社交网络与通用工具网关，支持帖子、评论、投票、私信、群组等功能",
+    "clawdchat-onboarding": "注册并入驻 ClawdChat.ai AI 社交网络账号，包括注册、凭证提取、认领验证等流程",
+    "clawdchat-registration": "注册 ClawdChat.ai 账号，处理 API Key 提取和凭证保存",
+    "clip": "OpenAI 视觉+语言连接模型，支持零样本图像分类和图文匹配",
+    "cloud-to-internal-migration": "将云托管服务（数据库、对象存储、应用）迁移至内部基础设施的系统化流程",
+    "cnife-skills-repo": "CNife/skills 仓库结构指南，包含 Python 项目规范、pre-commit hooks 和 PEP 723 脚本规范",
+    "codebase-inspection": "使用 pygount 检查代码库：代码行数、语言分布、比例",
+    "codex": "委托编码任务给 OpenAI Codex CLI（实现功能、创建 PR）",
+    "creative-ideation": "通过创意约束生成项目点子",
+    "debugging-hermes-tui-commands": "调试 Hermes TUI 斜杠命令：Python、Gateway、Ink UI",
+    "design": "为任意组件、页面或界面生成独特的高质量 UI，支持截图驱动迭代",
+    "design-md": "编写/验证/导出 Google DESIGN.md 令牌规范文件",
+    "dida365-creation-helper": "标准工作流用于创建滴答清单任务，解决换行符泄露、默认列表错误和时间语义问题",
+    "dida365-openapi": "基于滴答清单官方 OpenAPI 和 OAuth2 的任务管理 Skill，支持任务的创建/修改/完成/查询",
+    "dogfood": "探索性 QA 测试网页应用：发现 Bug、收集证据、生成报告",
+    "dspy": "DSPy：声明式语言模型编程，自动优化提示词和检索增强生成",
+    "evaluating-llms-harness": "lm-eval-harness：评估 LLM 性能（MMLU、GSM8K 等基准）",
+    "excalidraw": "手绘风格 Excalidraw JSON 图表（架构图、流程图、时序图）",
+    "feishu-cli-usage": "飞书/Lark CLI 使用指南，专注消息类型、模式和集成",
+    "find-nearby": "通过 OpenStreetMap 查找附近地点（餐厅、咖啡馆、酒吧、药店等）",
+    "find-skills": "帮助用户发现和安装 Agent 技能，当用户询问「如何做某事」时使用",
+    "findmy": "通过 macOS FindMy.app 跟踪 Apple 设备/AirTag",
+    "fine-tuning-with-trl": "TRL：SFT、DPO、PPO、GRPO、Reward Modeling 等 LLM 强化学习微调",
+    "frontend-design": "创建具有高设计质量的前端界面，用于页面设计、组件构建和交互体验优化",
+    "gguf": "GGUF 格式与 llama.cpp 量化，用于高效的 CPU/GPU 推理部署",
+    "gguf-quantization": "GGUF 格式与 llama.cpp 量化，用于高效的 CPU/GPU 推理部署",
+    "gif-search": "通过 curl + jq 从 Tenor 搜索和下载 GIF",
+    "git-master": "所有 Git 操作的必备技能，包含原子提交、rebase/squash、历史搜索（blame、bisect、log -S）",
+    "github-auth": "GitHub 认证配置：HTTPS Token、SSH Key、gh CLI 登录",
+    "github-code-review": "审查 PR：通过 gh 或 REST API 查看 diff 和内联评论",
+    "github-issues": "通过 gh 或 REST API 创建、分类、标记、分配 GitHub Issue",
+    "github-pr-workflow": "GitHub PR 生命周期：分支、提交、打开、CI、合并",
+    "github-repo-management": "克隆/创建/复刻仓库，管理远程仓库和发布",
+    "github-trending-cli": "在终端查看 GitHub Trending 热门仓库",
+    "gitlab-workflow": "GitLab 最佳实践：Merge Request、CI/CD 流水线、Issue 跟踪和 DevOps 工作流",
+    "godmode": "LLM 越狱：Parseltongue、GODMODE、ULTRAPLINIAN",
+    "google-workspace": "通过 gws CLI 或 Python 访问 Gmail、日历、Drive、文档和表格",
+    "grpo-rl-training": "GRPO/RL 微调专家指南，使用 TRL 进行推理和任务特定模型训练",
+    "guidance": "使用正则和文法控制 LLM 输出，保证生成有效的 JSON/XML/代码结构",
+    "heartmula": "HeartMuLa：类似 Suno 的基于歌词+标签的歌曲生成",
+    "hermes-agent": "Hermes Agent 使用与扩展完整指南：CLI 用法、配置、网关、工具、技能和功能",
+    "hermes-agent-daily-changelog": "自动抓取并总结 Hermes Agent 仓库最近 25 小时的 Git 提交变更，输出结构化中文汇报",
+    "hermes-agent-skill-authoring": "编写仓库内联 SKILL.md：前置元数据、验证器、目录结构",
+    "hermes-file-structure": "Hermes Agent 文件结构指南：用户管理与自动管理文件、配置/记忆/人格位置",
+    "hermes-media-delivery": "在 Hermes Agent 中跨渠道正确发送媒体内容（图片、音频、视频、文件）的指南",
+    "hermes-skills": "Hermes Agent 技能安装、更新和管理指南",
+    "hermes-token-analysis": "通过本地代理服务器分析 Hermes Agent API 请求的 Token 消耗明细",
+    "hermes-usage-insights": "查询 Hermes Agent 汇总使用统计：Token 数量、缓存命中率、费用估算和活动趋势",
+    "hermes-webui-baremetal": "以裸金属 systemd 服务方式部署 hermes-webui（无容器），涵盖 bootstrap.py fork 的关键陷阱",
+    "hermes-webui-podman": "使用 Podman（无 root）部署和管理 hermes-webui，包含容器启动参数和 systemd 集成",
+    "himalaya": "通过 IMAP/SMTP 管理邮件的 CLI 工具，支持列表、阅读、编写、回复、转发、搜索",
+    "hindsight-local-embedded-setup": "Hermes Agent（WSL/Linux）本地嵌入模式 Hindsight 记忆系统的排错和配置指南",
+    "hindsight-memory-setup": "配置和排错 Hermes Agent 本地嵌入模式的 Hindsight 记忆系统",
+    "huggingface-hub": "HuggingFace hf CLI：搜索/下载/上传模型和数据集",
+    "hunt": "在应用修复前定位错误、崩溃、异常行为和失败测试的根因",
+    "ideation": "通过创意约束生成项目点子",
+    "imessage": "通过 macOS 的 imsg CLI 发送和接收 iMessage/SMS",
+    "iwencai-skillhub": "安装和配置 Iwencai SkillHub CLI 及技能，涵盖手动安装和依赖管理",
+    "json-canvas": "创建和编辑 JSON Canvas 文件（.canvas），支持节点、边、分组和连接线",
+    "jupyter-live-kernel": "通过实时 Jupyter 内核（hamelnb）进行迭代式 Python 开发",
+    "karpathy-guidelines": "减少常见 LLM 编码错误的行为指南，在编写、审查或重构代码时使用",
+    "lab-check-api-reverse": "逆向工程的 Chingo lab4j-server 平台 API 客户端（之江实验室及 20+ 高校使用）",
+    "lab-safe-check": "使用 Playwright 浏览器自动化，自动完成之江实验室专业实验室的每日安全自查",
+    "learn": "运行六阶段研究工作流，将陌生领域或收集的素材转化为可发布的输出",
+    "linear": "通过 GraphQL + curl 管理 Linear 项目：Issue、团队、项目",
+    "llama-cpp": "llama.cpp 本地 GGUF 推理 + HF Hub 模型发现",
+    "llama-cpp-performance-tuning": "llama.cpp GPU 推理性能调优，包含自动化基准测试脚本和参数优化",
+    "lm-evaluation-harness": "lm-eval-harness：评估 LLM 性能（MMLU、GSM8K 等基准）",
+    "mcp-deepwiki": "访问和搜索 DeepWiki/GitHub 公共代码仓库文档的技能",
+    "mcporter": "使用 mcporter CLI 列出、配置、认证和调用 MCP 服务器/工具（HTTP 或 stdio）",
+    "mermaid-diagrams": "使用 Mermaid 语法创建软件系统图表的综合指南",
+    "minecraft-modpack-server": "托管模组版 Minecraft 服务器（CurseForge、Modrinth）",
+    "modal": "无服务器 GPU 云平台，按需 GPU 算力无需管理基础设施",
+    "modal-serverless-gpu": "无服务器 GPU 云平台，按需 GPU 算力无需管理基础设施",
+    "nano-pdf": "通过 nano-pdf CLI 编辑 PDF 文本/错字/标题",
+    "native-mcp": "MCP 客户端：连接服务器、注册工具（stdio/HTTP）",
+    "neverland-farm": "Neverland 农场自动化维护 — 技能驱动的自进化农场管理系统",
+    "node-inspect-debugger": "通过 --inspect + Chrome DevTools Protocol CLI 调试 Node.js",
+    "notion": "通过 curl 调用 Notion API：页面、数据库、区块、搜索",
+    "obliteratus": "OBLITERATUS：通过 diff-in-means 消除 LLM 拒绝回答行为",
+    "obsidian": "在 Obsidian 知识库中阅读、搜索和创建笔记",
+    "obsidian-bases": "创建和编辑 Obsidian Bases（.base 文件），支持视图、筛选器、公式和汇总",
+    "obsidian-cli": "使用 Obsidian CLI 与知识库交互，支持阅读、创建、搜索和管理笔记",
+    "obsidian-diary": "将会话内容总结到 Obsidian 工作日志或个人日记中，工作相关用 work 变体，个人方向用 personal 变体",
+    "obsidian-markdown": "创建和编辑 Obsidian 风味 Markdown，支持 Wiki 链接、嵌入、Callout 和属性",
+    "ocr-and-documents": "从 PDF/扫描件中提取文本（pymupdf、marker-pdf）",
+    "opencli-adapter-author": "为新站点编写 OpenCLI 适配器或为已有站点添加新命令，从框架搭建到测试完成的完整指南",
+    "opencli-autofix": "自动修复 OpenCLI 适配器故障，当 opencli 命令失败时引导诊断和修复",
+    "opencli-browser": "通过 opencli 驱动真实 Chrome 浏览器窗口：检查页面、填写表单、点击登录后的界面",
+    "opencli-usage": "OpenCLI 顶层使用指南，包含适配器发现、命令查找和工作流模式",
+    "opencode": "委托编码任务给 OpenCode CLI（实现功能、PR 审查）",
+    "opencode-primitives": "编写技能、插件、MCP 或配置驱动行为时参考 OpenCode 文档",
+    "openhue": "通过 OpenHue CLI 控制 Philips Hue 灯光、场景和房间",
+    "outlines": "Outlines：结构化 JSON/正则/Pydantic LLM 生成",
+    "p5js": "p5.js 作品：生成艺术、着色器、交互、3D 图形",
+    "paseo-install": "从源码在 WSL/Linux 上安装和配置 Paseo AI Agent 管理守护进程",
+    "pdf": "PDF 文件处理技能：阅读、提取文本/表格、编辑、转换和生成 PDF",
+    "peft": "使用 LoRA、QLoRA 等 25+ 方法进行参数高效微调，适用于 7B-70B 大模型",
+    "peft-fine-tuning": "使用 LoRA、QLoRA 等 25+ 方法进行参数高效微调",
+    "pixel-art": "像素艺术，支持 NES、Game Boy、PICO-8 等时代调色板",
+    "plan": "计划模式：将 Markdown 计划写入 .hermes/plans/，不执行代码",
+    "playwright-best-practices": "Playwright 测试编写、修复不稳定测试、调试失败、实现 Page Object Model 的指南",
+    "pokemon-player": "通过无头模拟器 + 内存读取游玩宝可梦",
+    "polymarket": "查询 Polymarket：市场、价格、订单簿、历史数据",
+    "popular-web-designs": "54 个真实设计系统（Stripe、Linear、Vercel）的 HTML/CSS 实现",
+    "powerpoint": "创建、读取、编辑 .pptx 演示文稿、幻灯片、备注和模板",
+    "product-manager-toolkit": "现代产品管理的核心工具和框架，从需求发现到交付",
+    "python-debugpy": "Python 调试：pdb REPL + debugpy 远程调试（DAP 协议）",
+    "pytorch-fsdp": "PyTorch FSDP 全分片数据并行训练专家指南",
+    "quantitative-backtest": "基于 Tushare 数据的 ETF/股票量化回测流程",
+    "quantitative-research": "世界级系统化交易研究：回测、Alpha 生成、因子模型、统计套利",
+    "read": "将任意 URL 或 PDF 转换为干净 Markdown，支持付费墙、JS 重页面和中文平台",
+    "requesting-code-review": "提交前审查：安全扫描、质量门禁、自动修复",
+    "research-paper-writing": "撰写 NeurIPS/ICML/ICLR 级别的机器学习论文",
+    "segment-anything": "SAM：通过点、框、掩码进行零样本图像分割",
+    "segment-anything-model": "SAM：通过点、框、掩码进行零样本图像分割",
+    "service-guard": "跨平台服务监控工具，监控 WSL systemd 服务和 Windows 原生服务，检测隧道连接问题",
+    "serving-llms-vllm": "vLLM：高吞吐 LLM 服务部署，OpenAI API 兼容，支持量化",
+    "skill-creator": "创建、修改和改进技能，并评估技能性能",
+    "skill-evaluator": "评估、比较、推荐、发现和安装 AI Agent 技能",
+    "skill-hermes": "去除 LLM 废话的系统提示词，减少 56-73% 的啰嗦输出",
+    "smart-search": "基于 opencli 命令的智能搜索路由器，用于在指定网站搜索信息",
+    "software-design-philosophy": "基于 John Ousterhout《软件设计哲学》的软件设计指南",
+    "songsee": "音频频谱图/特征提取（Mel、色度、MFCC）",
+    "songwriting-and-ai-music": "歌曲创作技巧与 Suno AI 音乐提示词",
+    "spotify": "Spotify：播放、搜索、排队、管理播放列表和设备",
+    "stable-diffusion": "通过 HuggingFace Diffusers 使用 Stable Diffusion 模型进行文生图",
+    "stable-diffusion-image-generation": "通过 HuggingFace Diffusers 使用 Stable Diffusion 模型进行文生图",
+    "storage-cleanup": "扫描系统磁盘空间，识别浪费空间并清理",
+    "subagent-driven-development": "通过 delegate_task 子代理执行计划（两阶段审查）",
+    "systematic-debugging": "四阶段根因调试：理解 Bug 后再修复",
+    "talk-normal": "去除 LLM 废话的系统提示词，显著减少啰嗦输出同时保留有用信息",
+    "technical-svg-diagrams": "生成 Cloudflare 风格的简洁技术 SVG 图表",
+    "test-driven-development": "TDD：强制 RED-GREEN-REFACTOR 流程，测试先于代码",
+    "think": "将粗略想法转化为经验证的计划，编写代码前先确认结构",
+    "tushare": "面向中文自然语言的 Tushare 数据研究技能，支持 A股/指数/ETF/财务/资金流等场景",
+    "tushare-data": "面向中文自然语言的 Tushare 数据研究技能",
+    "tushare-finance": "获取中国金融市场数据（A股、港股、美股、基金、期货、债券），支持 220+ Tushare Pro 接口",
+    "using-git-worktrees": "当功能开发需要与当前工作区隔离时使用 Git Worktree",
+    "uv-package-manager": "使用 uv 包管理器进行快速 Python 依赖管理和虚拟环境",
+    "vllm": "vLLM：高吞吐 LLM 服务部署，OpenAI API 兼容，支持量化",
+    "web-access": "所有联网操作处理入口，包括搜索、网页抓取、登录后操作和网络交互",
+    "webhook-subscriptions": "Webhook 订阅：事件驱动的 Agent 自动运行",
+    "weights-and-biases": "W&B：记录 ML 实验、超参数搜索、模型注册表和仪表盘",
+    "whisper": "OpenAI 通用语音识别模型，支持 99 种语言的转录、翻译和语言识别",
+    "windows-browser-control": "从 WSL 通过 Chrome DevTools Protocol 控制 Windows 浏览器（Edge、Chrome）",
+    "write": "去除 AI 写作痕迹，让文章读起来像自然的中文或英文",
+    "writing-plans": "编写实现计划：小任务拆分、文件路径、代码结构",
+    "wsl-memory-diagnostics": "WSL 内存问题诊断工作流，区分 WSL 内部使用与 Windows 主机消耗",
+    "wsl-service-watchdog": "已废弃，由 service-guard 替代",
+    "xitter": "通过 x-cli 终端客户端使用官方 X API 与 Twitter/X 交互",
+    "xurl": "通过 xurl CLI 使用 X/Twitter v2 API：发帖、搜索、私信、媒体",
+    "youtube-content": "将 YouTube 转录转换为摘要、推文、博客文章",
+    "zjlab-model-deploy": "在 zjlab.icp-dev-1 上部署 LLM 模型（GGUF），支持服务启停、镜像下载和 vLLM 配置",
+    "audit-hermes-agent-skills": "审计 Hermes Agent 已安装技能，统计使用频率并生成清理建议",
+    "arch-wsl-cleanup": "通过分层清理策略释放 Arch Linux WSL 磁盘空间",
+    "arch-wsl-install": "通过 pacman、AUR 或其他方式在 Arch Linux WSL 上安装包",
+    "a-share-value-analysis": "A股价值投资分析工具，使用 Tushare 获取数据，进行 PE/PB 历史分位、DCF 估值等分析",
+    "cronjob-feishu-fix": "修复 Hermes cron job 飞书消息投递失败的问题",
+    "diagnose-slow-session-search": "诊断 Hermes Agent session_search 性能缓慢的根因",
+    "doubao-share-extract": "提取豆包分享链接的完整对话内容并整理为文章，保存到 Obsidian 个人库",
+    "entrocamp": "逆熵进化营 Agent 能力评估与考试系统",
+    "github-trending": "抓取 GitHub Trending 热门仓库并格式化输出",
+    "hermes-gateway-troubleshoot": "诊断和修复 Hermes gateway 网关服务故障",
+    "optimize-agents-md": "AGENTS.md 编写与优化指南，遵循渐进式披露原则",
+    "llm-wiki": "构建和查询互联的 Markdown 知识库",
+    "manim-video": "Manim CE 动画：3Blue1Brown 风格的数学/算法视频",
+    "maps": "通过 OpenStreetMap/OSRM 进行地理编码、POI、路线规划",
+    "mf26": "MF26 相关技能",
+    "trf-fine-tuning": "TRL 微调：SFT、DPO、PPO、GRPO 和 Reward Modeling",
+    "unsloth": "Unsloth：2-5 倍更快的 LoRA/QLoRA 微调，更少显存消耗",
+}
+
+
+def find_hermes_venv_python() -> Path | None:
+    hermes_bin = shutil.which("hermes")
+    if not hermes_bin:
+        return None
+    try:
+        with open(hermes_bin) as f:
+            first_line = f.readline().strip()
+            if first_line.startswith("#!"):
+                python_path = first_line[2:].strip()
+                if Path(python_path).exists():
+                    return Path(python_path)
+    except (OSError, PermissionError):
+        pass
+    return None
+
+
+def get_skill_registry() -> dict[str, dict] | None:
+    python = find_hermes_venv_python()
+    if not python:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                str(python),
+                "-c",
+                r"""
+import json
+from tools.skills_tool import _find_all_skills
+from tools.skills_sync import _read_manifest
+from tools.skills_hub import HubLockFile
+
+all_skills = _find_all_skills(skip_disabled=True)
+hub_names = {e['name'] for e in HubLockFile().list_installed()}
+builtin_names = set(_read_manifest())
+
+output = {}
+for s in all_skills:
+    name = s['name']
+    if name in hub_names:
+        source = 'hub'
+    elif name in builtin_names:
+        source = 'builtin'
+    else:
+        source = 'local'
+    output[name] = {
+        'source': source,
+        'category': s.get('category'),
+    }
+print(json.dumps(output))
+""",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def get_disabled_set() -> set[str]:
+    if not CONFIG_PATH.exists():
+        return set()
+    try:
+        with open(CONFIG_PATH) as f:
+            config = yaml.safe_load(f) or {}
+        return set(config.get("skills", {}).get("disabled", []))
+    except Exception:
+        return set()
+
+
+def get_description_from_skill_dir(skill_dir: str) -> str:
+    """Try to read description from SKILL.md frontmatter"""
+    try:
+        skill_md = Path(skill_dir) / "SKILL.md"
+        if not skill_md.exists():
+            return ""
+        content = skill_md.read_text(encoding="utf-8", errors="replace")
+        stripped = content.lstrip()
+        if stripped.startswith("---"):
+            end = stripped.find("---", 3)
+            if end != -1:
+                fm = yaml.safe_load(stripped[3:end])
+                if fm and "description" in fm:
+                    desc = fm["description"]
+                    if isinstance(desc, list):
+                        desc = " ".join(desc)
+                    return desc.strip().replace("\n", " ")
+    except Exception:
+        pass
+    return ""
+
+
+def scan_all_skills() -> dict[str, dict]:
+    _EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups"))
+    skills = {}
+
+    def scan_directory(base_dir: Path, is_external: bool = False):
+        if not base_dir.exists():
+            return
+        for skill_md in base_dir.rglob("SKILL.md"):
+            if any(part in _EXCLUDED for part in skill_md.parts):
+                continue
+            name = skill_md.parent.name
+            if name in skills:
+                continue
+            parent = skill_md.parent.parent
+            category = parent.name if parent != base_dir else None
+            skills[name] = {
+                "dir": str(skill_md.parent),
+                "category": category,
+                "is_external": is_external,
+            }
+
+    scan_directory(SKILLS_DIR)
+    scan_directory(AGENTS_SKILLS, is_external=True)
+
+    registry = get_skill_registry()
+    disabled = get_disabled_set()
+
+    for name, info in skills.items():
+        info["disabled"] = name in disabled
+        if registry and name in registry:
+            info["source"] = registry[name]["source"]
+            if registry[name].get("category") and not info["category"]:
+                info["category"] = registry[name]["category"]
+        else:
+            info["source"] = "external" if info["is_external"] else "local"
+
+        # Get Chinese description
+        cn_desc = CN_DESCRIPTIONS.get(name, "")
+        if cn_desc:
+            info["description"] = cn_desc
+        else:
+            # Fallback: read from SKILL.md frontmatter
+            desc = get_description_from_skill_dir(info["dir"])
+            info["description"] = desc if desc else ""
+
+    return skills
+
+
+def count_skill_calls() -> dict[str, dict]:
+    if not STATE_DB.exists():
+        return {}
+    conn = sqlite3.connect(str(STATE_DB))
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT tool_calls, timestamp FROM messages
+        WHERE tool_calls IS NOT NULL
+        AND (tool_calls LIKE '%skill_view%' OR tool_calls LIKE '%skill_manage%')
+    """)
+    stats = {}
+    for tool_calls_json, timestamp in cur.fetchall():
+        try:
+            items = json.loads(tool_calls_json)
+            for item in items:
+                fn = item.get("function", {}).get("name", "")
+                if fn in ("skill_view", "skill_manage"):
+                    args = json.loads(item.get("function", {}).get("arguments", "{}"))
+                    name = args.get("name", "")
+                    if not name:
+                        continue
+                    if name not in stats:
+                        stats[name] = {"total": 0, "last_seen": 0}
+                    stats[name]["total"] += 1
+                    if timestamp > stats[name]["last_seen"]:
+                        stats[name]["last_seen"] = timestamp
+        except (json.JSONDecodeError, KeyError):
+            continue
+    conn.close()
+    return stats
+
+
+def format_source(source: str) -> str:
+    mapping = {
+        "builtin": "内置",
+        "local": "本地创建",
+        "hub": "skills.sh安装",
+        "external": "外部共享",
+    }
+    return mapping.get(source, source)
+
+
+def get_suggestion(name: str, info: dict, stats: dict | None) -> str:
+    if info.get("disabled"):
+        return "已禁用，无需操作"
+    if not stats:
+        if info["source"] == "builtin":
+            return "⚠️ 建议禁用（零调用内置技能）"
+        elif info["source"] == "hub":
+            return "🗑️ 建议卸载（零调用）"
+        elif info["source"] == "local":
+            return "🗑️ 建议删除（零调用）"
+        elif info["source"] == "external":
+            return "⚠️ 外部共享，确认不影响其他 Agent 后再处理"
+        return ""
+
+    days_since = (
+        (datetime.now().timestamp() - stats["last_seen"]) / 86400 if stats["last_seen"] else 999
+    )
+
+    if days_since <= 3:
+        return "✅ 近 3 天使用中"
+    elif days_since <= 7:
+        return "✅ 近一周使用过"
+    elif days_since <= 30:
+        return "🟡 近一个月使用过"
+    else:
+        return "🟠 历史使用过"
+
+
+def main():
+    print("📂 扫描技能...")
+    skills = scan_all_skills()
+    print(f"   找到 {len(skills)} 个技能")
+
+    print("📊 查询调用记录...")
+    call_stats = count_skill_calls()
+    print(f"   找到 {len(call_stats)} 个有调用记录的技能")
+
+    print("📝 生成 Excel...")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "技能审计"
+
+    headers = ["技能名称", "来源", "启用状态", "描述（中文）", "审计建议", "我的决策"]
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
+
+    widths = [25, 14, 10, 60, 30, 12]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    # Sort
+    source_priority = {"builtin": 0, "hub": 1, "local": 2, "external": 3}
+
+    all_items = []
+    for name, info in skills.items():
+        stat = call_stats.get(name)
+        enabled = "禁用" if info.get("disabled") else "启用"
+        suggestion = get_suggestion(name, info, stat)
+
+        all_items.append(
+            {
+                "name": name,
+                "source": format_source(info["source"]),
+                "enabled": enabled,
+                "description": info.get("description", ""),
+                "suggestion": suggestion,
+                "disabled": info.get("disabled", False),
+                "source_raw": info["source"],
+            }
+        )
+
+    all_items.sort(
+        key=lambda x: (
+            1 if x["disabled"] else 0,
+            source_priority.get(x["source_raw"], 99),
+            x["name"],
+        )
+    )
+
+    fill_disabled = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    fill_delete = PatternFill(start_color="FCE4EC", end_color="FCE4EC", fill_type="solid")
+    fill_disable = PatternFill(start_color="FFF3E0", end_color="FFF3E0", fill_type="solid")
+    fill_active = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+
+    for row_idx, item in enumerate(all_items, 2):
+        # Builtin: dropdown = 启用/禁用, default = current state
+        # Others: dropdown = 保留/删除, default = 保留
+        if item["source_raw"] == "builtin":
+            decision_default = "启用" if not item["disabled"] else "禁用"
+        else:
+            decision_default = "保留"
+        values = [
+            item["name"],
+            item["source"],
+            item["enabled"],
+            item["description"],
+            item["suggestion"],
+            decision_default,
+        ]
+        for col_idx, val in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.border = thin_border
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+
+            if item["disabled"]:
+                cell.fill = fill_disabled
+            elif "建议删除" in item["suggestion"] or "建议卸载" in item["suggestion"]:
+                cell.fill = fill_delete
+            elif "建议禁用" in item["suggestion"]:
+                cell.fill = fill_disable
+            elif "使用" in item["suggestion"]:
+                cell.fill = fill_active
+
+    # Data validation: dropdown for "我的决策" column (F)
+    # Builtin: 保留/禁用; Others: 保留/删除
+    dv_builtin = DataValidation(type="list", formula1='"启用,禁用"', allow_blank=True)
+    dv_builtin.error = "请选择「启用」或「禁用」"
+    dv_builtin.errorTitle = "无效输入"
+    ws.add_data_validation(dv_builtin)
+
+    dv_other = DataValidation(type="list", formula1='"保留,删除"', allow_blank=True)
+    dv_other.error = "请选择「保留」或「删除」"
+    dv_other.errorTitle = "无效输入"
+    ws.add_data_validation(dv_other)
+
+    for row_idx, item in enumerate(all_items, 2):
+        cell_ref = f"F{row_idx}"
+        if item["source_raw"] == "builtin":
+            dv_builtin.add(cell_ref)
+        else:
+            dv_other.add(cell_ref)
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:F{len(all_items) + 1}"
+
+    output_path = str(Path.home() / "hermes-workspace" / "hermes-skills" / "技能审计报告.xlsx")
+    wb.save(output_path)
+    print(f"\n✅ Excel 已保存: {output_path}")
+    print(f"   共 {len(all_items)} 个技能，全部描述已转为中文")
+
+
+if __name__ == "__main__":
+    main()

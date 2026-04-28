@@ -16,7 +16,7 @@ bunx skills add CNife/skills@python
 
 | Skill | 描述 |
 |-------|------|
-| [audit-hermes-agent-skills](./skills/audit-hermes-agent-skills) | 审计 Hermes Agent 技能使用频率，基于指数衰减算法计算热度，安全清理未使用技能 |
+| [audit-hermes-agent-skills](./skills/audit-hermes-agent-skills) | 审计 Hermes Agent 技能使用频率，生成带中文描述和下拉决策的 XLSX，支持清理执行 |
 | [cnife-skills-repo](./skills/cnife-skills-repo) | 本仓库结构说明、Python 项目规范、PEP 723 单脚本模式和 pre-commit 钩子配置 |
 | [git-master](./skills/git-master) | Git 操作专家：原子提交、rebase/squash、历史搜索（blame/bisect/log -S） |
 | [obsidian-diary](./skills/obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
