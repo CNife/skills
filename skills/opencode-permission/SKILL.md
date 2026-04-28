@@ -15,33 +15,45 @@ compatibility: Requires `uv` (auto-manages Python runtime). Uses `json-five` for
 
 # OpenCode Permission Manager
 
-Manage `permission.bash` rules in `~/.config/opencode/opencode.jsonc`. Add, remove, or list auto-approval rules for shell commands and tool invocations.
+Manage `permission` rules in `~/.config/opencode/opencode.jsonc`. Add, remove, list, or format auto-approval rules for shell commands and tool invocations.
 
 ## Workflow
 
-1. Identify the rule string and action from the user's request (e.g., `"kubectl get *"` → `allow`)
-2. Determine the subcommand: `add` (default) / `remove` / `list` / `list-all`
+1. Identify the rule string(s) and action from the user's request (e.g., `"kubectl get *"` → `allow`)
+2. Determine the subcommand: `add` / `remove` / `list` / `list-all` / `format`
 3. Run the bundled script:
    ```bash
+   # 单条添加
    uv run --script <skill-path>/scripts/manage_permission.py add "kubectl get *" --action allow
+
+   # 批量添加
+   uv run --script <skill-path>/scripts/manage_permission.py add "kubectl get *" "kubectl describe *" "kubectl logs *"
    ```
-4. Confirm the change was written to the config file
+4. Confirm the change was written
 5. Remind the user: **修改配置后需要重启 OpenCode 才能生效**
+
+## Behaviors
+
+- **自动备份**：`add` / `remove` / `format` 操作会在写入前创建带时间戳的备份，文件名格式 `opencode.jsonc.YYYYMMDDTHHMMSS.bak`，多次变更各自保留。
+- **自动格式化**：`add` / `remove` 操作完成后自动规范 bash 段格式，保证每条规则独占一行。
+- **批量添加**：`add` 接受多个位置参数，只需一次执行。
 
 ## Command Reference
 
-### Add a rule
+### Add rules
 
 ```bash
-# Allow (default action)
+# 单条（默认 action=allow）
 uv run --script manage_permission.py add "kubectl get *"
 
-# Explicit action
-uv run --script manage_permission.py add "kubectl get *" --action allow
+# 批量添加
+uv run --script manage_permission.py add "kubectl get *" "kubectl describe *" "kubectl logs *"
+
+# 指定 action
 uv run --script manage_permission.py add "git commit *" --action ask
 uv run --script manage_permission.py add "rm -rf *" --action deny
 
-# Custom config path
+# 自定义配置路径
 uv run --script manage_permission.py add "kubectl get *" --config /path/to/opencode.jsonc
 ```
 
@@ -59,6 +71,13 @@ uv run --script manage_permission.py list
 
 # List all permission categories (bash, read, edit, etc.)
 uv run --script manage_permission.py list-all
+```
+
+### Format rules
+
+```bash
+# 格式化 bash 规则（一行一条，自动备份）
+uv run --script manage_permission.py format
 ```
 
 ## Rule Format Reference
@@ -132,8 +151,14 @@ Simple keys (no pattern matching) accept only `"allow"`, `"ask"`, or `"deny"` as
 ### Allow all kubectl read operations
 
 ```bash
-uv run --script manage_permission.py add "kubectl get *" --action allow
-uv run --script manage_permission.py add "kubectl describe *" --action allow
+uv run --script manage_permission.py add \
+  "kubectl get *" \
+  "kubectl describe *" \
+  "kubectl logs *" \
+  "kubectl top *" \
+  "kubectl explain *" \
+  "kubectl diff *" \
+  "kubectl auth can-i *"
 ```
 
 ### Allow git commit but require confirmation for push
@@ -149,6 +174,12 @@ uv run --script manage_permission.py add "git push *" --action ask
 uv run --script manage_permission.py add "rm -rf *" --action deny
 ```
 
+### Format existing config
+
+```bash
+uv run --script manage_permission.py format
+```
+
 ### View current rules
 
 ```bash
@@ -157,6 +188,6 @@ uv run --script manage_permission.py list
 
 ## Notes
 
-- This script uses `json-five` (ModelLoader/ModelDumper) to preserve all existing comments in the config file during read-modify-write cycles
-- New rules are appended to the end of the `permission.bash` object
-- The script automatically creates the `permission` and `bash` sections if they don't exist (with `"*": "ask"` as the default bash rule)
+- Uses `json-five` (ModelLoader/ModelDumper) to preserve all existing comments during read-modify-write cycles.
+- New rules are appended to the end of `permission.bash`; after writing, the bash section is automatically formatted to one-rule-per-line.
+- `add` / `remove` / `format` create a timestamped backup before writing (e.g., `opencode.jsonc.20260428T153045.bak`).
