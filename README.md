@@ -24,6 +24,7 @@ bunx skills add CNife/skills@python
 | [optimize-agents-md](./skills/optimize-agents-md) | AGENTS.md 编写与优化指南，遵循渐进式披露原则 |
 | [qwen-code-permission](./skills/qwen-code-permission) | 自动化管理 Qwen Code 权限规则（allow/ask/deny），一键添加命令到允许列表 |
 | [skill-evaluator](./skills/skill-evaluator) | 评估、比较、推荐、发现和安装 AI Agent 技能 |
+| [daily-publish](./skills/daily-publish) | 多数据源收集活动轨迹 → 分析工作与个人 → Kami 排版 PDF → 邮件投递 |
 | [worklog](./skills/worklog) | 从 OpenCode 和 Qwen Code 提取会话数据，生成结构化工作总结 |
 
 ## 开发
