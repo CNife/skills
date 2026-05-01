@@ -42,9 +42,33 @@ description: 在会话问题解决得差不多时提醒我整理知识到 Obsidi
 
 ## 大小事执行
 
+### 前置：Vault 路径发现
+
+**不要依赖对话记忆中的路径**。改为读取 `obsidian-diary` skill 的共享配置：
+
+**配置文件**：`~/.config/cnife-skills/obsidian-diary.json`
+
+示例结构：
+```json
+{
+  "vaults": {
+    "personal": { "base": "/mnt/c/Obsidian/个人", "diary_dir": "个人日记", ... },
+    "work":     { "base": "/mnt/c/Obsidian/工作", "diary_dir": "工作日志", ... }
+  }
+}
+```
+
+如果配置文件不存在 → 询问用户 vault 路径，引导他们先配置 `obsidian-diary` skill。
+
+如果用户没有指定用哪个 vault → 根据会话内容判断：工作相关用 `work`，个人技术/学习用 `personal`。不确定时问用户。
+
 ### 小事 → 日记
 
-追加到 `个人日记/` 今日日记对应主题段落下。
+委托给 `obsidian-diary` skill 处理：
+
+1. 加载 `obsidian-diary` skill
+2. 执行 `uv run --script scripts/obsidian-helper.py --vault <变体> --action context` 获取今日日记路径和大纲
+3. 找到对应主题段落，追加内容
 
 适合场景：
 - 单个知识点或工具用法
@@ -53,15 +77,33 @@ description: 在会话问题解决得差不多时提醒我整理知识到 Obsidi
 
 ### 大事 → 独立文章 + 日记链接
 
-新建独立笔记，按主题归类到 `个人/AI/Hermes/`、`个人/AI/OpenCode/`、`投资/ETF/`、`效率/` 等对应目录。然后在今日日记中添加 Obsidian 链接：`[[文章标题]]`。
+#### 文章存放路径
+
+读取配置中的 `vaults.<变体>.base` 获取 vault 根目录，再按主题映射到子目录。
+
+主题→子目录映射（硬编码在技能中，无需外部配置）：
+
+| 主题关键词 | 存放目录 |
+|-----------|---------|
+| Hermes Agent、Curator、技能系统 | `AI/Hermes/` |
+| OpenCode、OpenCLI、Qwen Code | `AI/OpenCode/` |
+| 量化投资、ETF、策略 | `投资/` |
+| Tushare、数据源 | `投资/数据源/` |
+| 读书、学习 | `读书笔记/` |
+| 工具配置、效率 | `效率/` |
+| 软考、考试 | `软考-高级架构师/` |
+| NFS、K8s、vLLM、部署 | `AI/部署/` |
+| 其他/无法归类 | 先问用户放哪 |
+
+文件命名：`<中文标题>.md`（无特殊字符）。然后在今日日记中添加 Obsidian 链接：`[[文件标题]]`。
 
 适合场景：
-- 跨多轮的调研（如今天的 Curator 调研）
+- 跨多轮的调研（如 Curator 调研）
 - 有结构性结论和多个来源的分析
 - 方法论或流程总结
 
 ## 注意事项
 
-- 如果今日日记不存在，优先让用户确认是否创建
+- 日记创建：`obsidian-helper.py --action context` 已包含自动创建逻辑（`DIARY_EXISTS=false` 时从模板创建），无需额外处理
 - 独立文章的 frontmatter 不加 aliases 字段
 - 通用调研文章不要包含用户个性化上下文
