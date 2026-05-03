@@ -339,28 +339,31 @@ def get_curator_data() -> dict:
             capture_output=True, text=True, timeout=10,
         )
         if proc.returncode == 0:
-            # Skip the first "curator: ENABLED" block, find agent-created skills
+            # Scan all lines for skill rows matching: name  activity=N  use=N ...
+            # The curator status has 3 skill tables (least active / most active / least recently
+            # active), plus summary lines (active/stale/archived counts). We skip any line where
+            # the first token is a section header or a count label.
+            skip_first = {"agent", "active", "stale", "archived", "least", "most", "curator:"}
             lines = proc.stdout.splitlines()
-            in_agent_created = False
             for line in lines:
                 stripped = line.strip()
-                if "agent-created skills:" in stripped:
-                    in_agent_created = True
+                if not stripped:
                     continue
-                if in_agent_created:
-                    # Stop at "least recently active" or "most active" section markers
-                    if "least " in stripped or "most " in stripped or not stripped:
-                        in_agent_created = False
-                        continue
-                    # Parse lines like:
-                    #   clash-verge-rev    activity=58  use=17  ...  last_activity=1d ago
-                    parts = stripped.split()
-                    if parts and not parts[0].startswith(("agent", "stale", "archived", "least", "most")):
-                        name = parts[0]
-                        result["agent_created"].add(name)
-                        act = parse_curator_activity(stripped)
-                        if act:
-                            result["activity"][name] = act
+                parts = stripped.split()
+                if len(parts) < 2:
+                    continue
+                first = parts[0].rstrip(":")
+                if first in skip_first:
+                    continue
+                # Check if second token looks like "activity=N"
+                if not parts[1].startswith("activity="):
+                    continue
+                # This is a skill row
+                name = parts[0]
+                result["agent_created"].add(name)
+                act = parse_curator_activity(stripped)
+                if act:
+                    result["activity"][name] = act
     except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
         pass
 
