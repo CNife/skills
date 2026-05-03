@@ -387,6 +387,33 @@ def get_curator_data() -> dict:
     return result
 
 
+# ── 技能仓库来源分类 ──────────────────────────────────────────────────────────
+def get_skill_source_manifest() -> dict[str, str]:
+    """从锁文件精确识别技能是通过 skills.sh 还是 SkillHub 安装的。
+
+    Returns:
+        {skill_name: "skills.sh"} | {skill_name: "skillhub"}
+    """
+    manifest: dict[str, str] = {}
+    agents_lock = Path.home() / ".agents" / ".skill-lock.json"
+    if agents_lock.exists():
+        try:
+            data = json.loads(agents_lock.read_text(encoding="utf-8"))
+            for name in data.get("skills", {}):
+                manifest[name] = "skills.sh"
+        except (OSError, json.JSONDecodeError):
+            pass
+    hub_lock = SKILLS_DIR / ".hub" / "lock.json"
+    if hub_lock.exists():
+        try:
+            data = json.loads(hub_lock.read_text(encoding="utf-8"))
+            for name in data.get("installed", {}):
+                manifest[name] = "skillhub"
+        except (OSError, json.JSONDecodeError):
+            pass
+    return manifest
+
+
 # ── 技能扫描 ─────────────────────────────────────────────────────────────────
 def scan_all_skills() -> dict[str, dict]:
     skills = {}
@@ -414,6 +441,7 @@ def scan_all_skills() -> dict[str, dict]:
     registry = get_skill_registry()
     disabled = get_disabled_set()
     curator_data = get_curator_data()
+    source_manifest = get_skill_source_manifest()
     for name, info in skills.items():
         info["disabled"] = name in disabled
         if registry and name in registry:
@@ -423,9 +451,13 @@ def scan_all_skills() -> dict[str, dict]:
         else:
             info["source"] = "external" if info["is_external"] else "local"
 
-        # Curator 覆盖：agent-created 比 local 更精确
+        # 覆盖 1: Curator agent-created 比 local 更精确
         if name in curator_data["agent_created"]:
             info["source"] = "agent-created"
+
+        # 覆盖 2: 锁文件来源比 API 的 "hub" 更精确（区分 skills.sh vs skillhub）
+        if name in source_manifest:
+            info["source"] = source_manifest[name]
 
         # Curator 活跃度数据
         if name in curator_data.get("activity", {}):
@@ -477,6 +509,8 @@ def count_skill_calls() -> dict[str, dict]:
 def format_source(source: str) -> str:
     return {
         "builtin": "内置",
+        "skills.sh": "skills.sh安装",
+        "skillhub": "SkillHub安装",
         "agent-created": "Agent创建",
         "local": "本地创建",
         "hub": "skills.sh安装",
@@ -496,7 +530,7 @@ def get_suggestion(name: str, info: dict, stats: dict | None) -> str:
     if not stats:
         if info["source"] == "builtin":
             return "⚠️ 建议禁用（零调用内置技能）"
-        elif info["source"] == "hub":
+        elif info["source"] in ("hub", "skills.sh", "skillhub"):
             return "🗑️ 建议卸载（零调用）"
         elif info["source"] == "agent-created":
             return "⏸️ Agent创建，零调用但可保留（首次方）"
@@ -541,7 +575,7 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
     for i, w in enumerate([25, 14, 10, 60, 20, 20, 30, 12], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
-    source_priority = {"builtin": 0, "hub": 1, "agent-created": 2, "local": 3, "external": 4}
+    source_priority = {"builtin": 0, "hub": 1, "skills.sh": 1, "skillhub": 1, "agent-created": 2, "local": 3, "external": 4}
     all_items = []
     for name, info in skills.items():
         stat = call_stats.get(name)

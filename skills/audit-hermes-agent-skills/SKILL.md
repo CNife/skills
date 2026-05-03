@@ -77,13 +77,14 @@ uv run ~/.hermes/skills/audit-hermes-agent-skills/scripts/audit.py --apply
 
 来源分类映射：
 
-| 来源 | 含义 | 清理方式 |
-|------|------|---------|
-| `builtin` | Hermes 内置技能 | 添加到 config.yaml disabled 列表 |
-| `hub` | 从 skills.sh 等 Hub 源安装 | `hermes skills uninstall` |
-| `agent-created` | Agent 在用户监督下创建的技能（首次方） | 直接删除目录（先备份），低优先级清理 |
-| `local` | 其他本地安装的技能 | 直接删除目录（先备份） |
-| `external` | 外部共享技能（`~/.agents/skills/`） | 删除需谨慎，影响所有 Agent |
+| 来源 | 识别方式 | 含义 | 清理方式 |
+|------|---------|------|---------|
+| `builtin` | Hermes `.bundled_manifest` | Hermes 内置技能 | 添加到 config.yaml disabled 列表 |
+| `skills.sh` | `~/.agents/.skill-lock.json` | 通过 skills.sh 安装的社区技能 | `bunx skills add` / `hermes skills uninstall` |
+| `skillhub` | `~/.hermes/skills/.hub/lock.json` | 通过 SkillHub 安装的技能 | `skillhub remove` |
+| `agent-created` | Curator `agent-created` 列表 | Agent 在用户监督下创建的技能（首次方） | 直接删除目录（先备份），低优先级清理 |
+| `local` | 不在以上任何来源 | 其他本地安装的技能 | 直接删除目录（先备份） |
+| `external` | `~/.agents/skills/` 路径 | 外部共享技能，影响所有 Agent | 删除需谨慎，确认不影响其他 Agent |
 
 ## 备份恢复
 
