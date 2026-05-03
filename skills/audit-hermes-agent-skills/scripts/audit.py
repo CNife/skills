@@ -33,7 +33,7 @@ SKILLS_DIR = HERMES_HOME / "skills"
 AGENTS_SKILLS = Path.home() / ".agents" / "skills"
 STATE_DB = HERMES_HOME / "state.db"
 CONFIG_PATH = HERMES_HOME / "config.yaml"
-_EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups"))
+_EXCLUDED = frozenset((".git", ".github", ".hub", ".audit-backups", ".archive"))
 
 # ── 中文描述映射 ─────────────────────────────────────────────────────────────
 CN_DESCRIPTIONS = {
