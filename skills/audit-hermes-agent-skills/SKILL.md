@@ -60,13 +60,29 @@ uv run ~/.hermes/skills/audit-hermes-agent-skills/scripts/audit.py --apply
 
 技能调用记录存储在 `~/.hermes/state.db` 的 `messages.tool_calls` 字段中。通过解析 `skill_view` 和 `skill_manage` 工具调用，统计每个技能的调用历史。
 
-脚本通过 **hermes 内部 API + 文件系统扫描** 双重数据源确定技能来源：
+脚本通过 **三种数据源** 确定技能属性和健康度：
+
+| 数据源 | 用途 | 优先级 |
+|--------|------|--------|
+| Hermes 内部 API（`_find_all_skills`、`_read_manifest`、`HubLockFile`） | 基础来源分类：builtin / hub / local / external | 主分类 |
+| **Hermes Curator**（`hermes curator status` + `run.json`） | **交叉验证来源分类**，补充 Curator 活跃度指标（activity/use/view/patches）和 consolidation/archive 关系 | 权威覆盖（高于 API） |
+| 文件系统扫描 + `state.db` tool_calls 解析 | 定位物理目录路径、统计调用频次 | 基础覆盖 |
+
+**Hermes Curator 集成点：**
+
+- **来源分类权责**：如果 Curator 认定某技能为 `agent-created`，覆盖 API 返回的 `local` 分类（agent-created 是 local 的真子集）
+- **Consolidation 感知**：从 Curator 的 `run.json` 读取技能合并关系（如 `dida365-openapi → platform-integration`），告知用户该技能已被 umbrella 替代
+- **归档感知**：curator 归档的技能在建议中标记为「已归档」，防止用户重新启用
+- **活跃度指标**：`activity` = 总操作次数，`use` = skill_view 调用，`patches` = 修改次数，`last_activity` = 最近活动
+
+来源分类映射：
 
 | 来源 | 含义 | 清理方式 |
 |------|------|---------|
 | `builtin` | Hermes 内置技能 | 添加到 config.yaml disabled 列表 |
 | `hub` | 从 skills.sh 等 Hub 源安装 | `hermes skills uninstall` |
-| `local` | 本地安装的技能 | 直接删除目录（先备份） |
+| `agent-created` | Agent 在用户监督下创建的技能（首次方） | 直接删除目录（先备份），低优先级清理 |
+| `local` | 其他本地安装的技能 | 直接删除目录（先备份） |
 | `external` | 外部共享技能（`~/.agents/skills/`） | 删除需谨慎，影响所有 Agent |
 
 ## 备份恢复

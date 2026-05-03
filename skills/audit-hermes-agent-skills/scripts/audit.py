@@ -300,6 +300,90 @@ def get_disabled_set() -> set[str]:
         return set()
 
 
+# ── Curator 数据集成 ──────────────────────────────────────────────────────────
+def parse_curator_activity(line: str) -> dict | None:
+    """解析 curator status 单行输出为活跃度字典。"""
+    parts = line.strip().split()
+    if len(parts) < 2:
+        return None
+    activity = {}
+    for part in parts[1:]:
+        if "=" in part:
+            k, v = part.split("=", 1)
+            activity[k] = v
+    return activity if activity else None
+
+
+def get_curator_data() -> dict:
+    """从 Hermes Curator 获取技能来源分类和活跃度数据。
+
+    Returns:
+        {
+            "agent_created": set[str],     # curator 认定的首次方技能
+            "activity": dict[str, dict],   # name -> {activity, use, view, patches, last_activity}
+            "consolidated": dict[str, str],  # name -> umbrella_name
+            "archived": set[str],           # 已归档技能
+        }
+    """
+    result: dict = {
+        "agent_created": set(),
+        "activity": {},
+        "consolidated": {},
+        "archived": set(),
+    }
+
+    # Method 1: Parse hermes curator status
+    try:
+        proc = subprocess.run(
+            ["hermes", "curator", "status"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0:
+            # Skip the first "curator: ENABLED" block, find agent-created skills
+            lines = proc.stdout.splitlines()
+            in_agent_created = False
+            for line in lines:
+                stripped = line.strip()
+                if "agent-created skills:" in stripped:
+                    in_agent_created = True
+                    continue
+                if in_agent_created:
+                    # Stop at "least recently active" or "most active" section markers
+                    if "least " in stripped or "most " in stripped or not stripped:
+                        in_agent_created = False
+                        continue
+                    # Parse lines like:
+                    #   clash-verge-rev    activity=58  use=17  ...  last_activity=1d ago
+                    parts = stripped.split()
+                    if parts and not parts[0].startswith(("agent", "stale", "archived", "least", "most")):
+                        name = parts[0]
+                        result["agent_created"].add(name)
+                        act = parse_curator_activity(stripped)
+                        if act:
+                            result["activity"][name] = act
+    except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
+        pass
+
+    # Method 2: Read latest run.json for consolidation and archive data
+    try:
+        import glob
+        log_dirs = sorted(
+            glob.glob(str(HERMES_HOME / "logs" / "curator" / "*/")), reverse=True
+        )
+        if log_dirs:
+            run_path = Path(log_dirs[0]) / "run.json"
+            if run_path.exists():
+                run_data = json.loads(run_path.read_text(encoding="utf-8"))
+                for c in run_data.get("consolidated", []):
+                    result["consolidated"][c["name"]] = c["into"]
+                for a in run_data.get("archived", []):
+                    result["archived"].add(a)
+    except (OSError, json.JSONDecodeError, IndexError):
+        pass
+
+    return result
+
+
 # ── 技能扫描 ─────────────────────────────────────────────────────────────────
 def scan_all_skills() -> dict[str, dict]:
     skills = {}
@@ -326,6 +410,7 @@ def scan_all_skills() -> dict[str, dict]:
 
     registry = get_skill_registry()
     disabled = get_disabled_set()
+    curator_data = get_curator_data()
     for name, info in skills.items():
         info["disabled"] = name in disabled
         if registry and name in registry:
@@ -334,6 +419,21 @@ def scan_all_skills() -> dict[str, dict]:
                 info["category"] = registry[name]["category"]
         else:
             info["source"] = "external" if info["is_external"] else "local"
+
+        # Curator 覆盖：agent-created 比 local 更精确
+        if name in curator_data["agent_created"]:
+            info["source"] = "agent-created"
+
+        # Curator 活跃度数据
+        if name in curator_data.get("activity", {}):
+            info["curator_activity"] = curator_data["activity"][name]
+
+        # Consolidation / Archive 感知
+        if name in curator_data.get("consolidated", {}):
+            info["consolidated_into"] = curator_data["consolidated"][name]
+        if name in curator_data.get("archived", {}):
+            info["archived"] = True
+
         info["description"] = CN_DESCRIPTIONS.get(name, "")
     return skills
 
@@ -374,6 +474,7 @@ def count_skill_calls() -> dict[str, dict]:
 def format_source(source: str) -> str:
     return {
         "builtin": "内置",
+        "agent-created": "Agent创建",
         "local": "本地创建",
         "hub": "skills.sh安装",
         "external": "外部共享",
@@ -381,6 +482,12 @@ def format_source(source: str) -> str:
 
 
 def get_suggestion(name: str, info: dict, stats: dict | None) -> str:
+    # 已归档技能 — 最高优先级提示
+    if info.get("archived"):
+        return "📦 已归档，建议删除（已被 curator 归档）"
+    # 已被合并到 umbrella
+    if info.get("consolidated_into"):
+        return f"🔄 已合并到 {info['consolidated_into']}，建议删除原始技能"
     if info.get("disabled"):
         return "已禁用，无需操作"
     if not stats:
@@ -388,6 +495,8 @@ def get_suggestion(name: str, info: dict, stats: dict | None) -> str:
             return "⚠️ 建议禁用（零调用内置技能）"
         elif info["source"] == "hub":
             return "🗑️ 建议卸载（零调用）"
+        elif info["source"] == "agent-created":
+            return "⏸️ Agent创建，零调用但可保留（首次方）"
         elif info["source"] == "local":
             return "🗑️ 建议删除（零调用）"
         elif info["source"] == "external":
@@ -410,7 +519,7 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
     ws = wb.active
     ws.title = "技能审计"
 
-    headers = ["技能名称", "来源", "启用状态", "描述（中文）", "审计建议", "我的决策"]
+    headers = ["技能名称", "来源", "启用状态", "描述（中文）", "Curator活跃度", "被合并到", "审计建议", "我的决策"]
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
     thin_border = Border(
@@ -426,10 +535,10 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = thin_border
 
-    for i, w in enumerate([25, 14, 10, 60, 30, 12], 1):
+    for i, w in enumerate([25, 14, 10, 60, 20, 20, 30, 12], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
-    source_priority = {"builtin": 0, "hub": 1, "local": 2, "external": 3}
+    source_priority = {"builtin": 0, "hub": 1, "agent-created": 2, "local": 3, "external": 4}
     all_items = []
     for name, info in skills.items():
         stat = call_stats.get(name)
@@ -439,21 +548,37 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
             decision_default = "禁用" if info.get("disabled") else "启用"
         else:
             decision_default = "保留"
+
+        # Curator 活跃度格式化
+        curator_act = info.get("curator_activity", {})
+        if curator_act:
+            act_str = f"activity={curator_act.get('activity','?')} use={curator_act.get('use','?')} patches={curator_act.get('patches','?')} last={curator_act.get('last_activity','?')}"
+        else:
+            act_str = ""
+
+        # 合并列
+        merged_into = info.get("consolidated_into", "")
+
         all_items.append(
             {
                 "name": name,
                 "source": format_source(info["source"]),
                 "enabled": enabled,
                 "description": info.get("description", ""),
+                "curator_activity": act_str,
+                "consolidated_into": merged_into,
                 "suggestion": suggestion,
                 "disabled": info.get("disabled", False),
+                "archived": info.get("archived", False),
                 "source_raw": info["source"],
                 "decision_default": decision_default,
             }
         )
+    # Sort: disabled last, then by source priority, then archive status, then name
     all_items.sort(
         key=lambda x: (
             1 if x["disabled"] else 0,
+            1 if x.get("archived") else 0,
             source_priority.get(x["source_raw"], 99),
             x["name"],
         )
@@ -463,6 +588,7 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
     fill_delete = PatternFill(start_color="FCE4EC", end_color="FCE4EC", fill_type="solid")
     fill_disable = PatternFill(start_color="FFF3E0", end_color="FFF3E0", fill_type="solid")
     fill_active = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+    fill_archived = PatternFill(start_color="E8E0F0", end_color="E8E0F0", fill_type="solid")
 
     for row_idx, item in enumerate(all_items, 2):
         values = [
@@ -470,6 +596,8 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
             item["source"],
             item["enabled"],
             item["description"],
+            item["curator_activity"],
+            item["consolidated_into"],
             item["suggestion"],
             item["decision_default"],
         ]
@@ -479,6 +607,8 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
             cell.alignment = Alignment(vertical="center", wrap_text=True)
             if item["disabled"]:
                 cell.fill = fill_disabled
+            elif item.get("archived"):
+                cell.fill = fill_archived
             elif "建议删除" in item["suggestion"] or "建议卸载" in item["suggestion"]:
                 cell.fill = fill_delete
             elif "建议禁用" in item["suggestion"]:
@@ -498,12 +628,12 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
 
     for row_idx, item in enumerate(all_items, 2):
         if item["source_raw"] == "builtin":
-            dv_builtin.add(f"F{row_idx}")
+            dv_builtin.add(f"H{row_idx}")
         else:
-            dv_other.add(f"F{row_idx}")
+            dv_other.add(f"H{row_idx}")
 
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:F{len(all_items) + 1}"
+    ws.auto_filter.ref = f"A1:H{len(all_items) + 1}"
 
     output_path = str(Path.cwd() / "技能审计报告.xlsx")
     wb.save(output_path)
@@ -516,7 +646,7 @@ def read_decisions(xlsx_path: str) -> list[dict]:
     ws = wb.active
     changes = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        name, source, enabled, _desc, _suggestion, decision = row
+        name, source, enabled, _desc, _curator_act, _merged, _suggestion, decision = row
         if not name:
             continue
         decision = str(decision).strip() if decision else ""
@@ -653,9 +783,20 @@ def main():
     zero = sum(1 for name, s in skills.items() if not call_stats.get(name) and not s["disabled"])
     disabled_count = sum(1 for s in skills.values() if s["disabled"])
 
+    # Curator 统计
+    agent_created_count = sum(1 for s in skills.values() if s.get("source") == "agent-created")
+    archived_count = sum(1 for s in skills.values() if s.get("archived"))
+    consolidated_count = sum(1 for s in skills.values() if s.get("consolidated_into"))
+
     print(
         f"   共 {len(skills)} 个技能 | {active} 个在用 | {zero} 个零调用 | {disabled_count} 个已禁用"
     )
+    if agent_created_count:
+        print(f"   ├ Curator: {agent_created_count} 个 Agent创建 (首次方)")
+    if consolidated_count:
+        print(f"   ├ Curator: {consolidated_count} 个已合并到 umbrella")
+    if archived_count:
+        print(f"   └ Curator: {archived_count} 个已归档")
 
     print("📊 生成 XLSX...")
     out = generate_xlsx(skills, call_stats)
