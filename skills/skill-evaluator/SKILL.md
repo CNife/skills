@@ -24,128 +24,11 @@ description: >
 
 ## 核心流程
 
-整个流程分为五个阶段，按顺序执行：
+整个流程分为四个阶段，按顺序执行：
 
 ```
-来源分类 → 搜索候选 → 信息收集 → 安全评估 → 对比推荐与安装
+搜索候选 → 信息收集 → 安全评估 → 对比推荐与安装
 ```
-
-阶段 0 利用 Hermes Curator 和技能仓库追踪文件，将每个已安装技能精准归类到来源，据此差异化审计深度。
-
----
-
-## 阶段 0：来源分类（Curator 数据集成）
-
-**目标**：在执行评估前，将每个已安装技能精确归类到来源，区分首次方（agent-created）和第三方（skills.sh / SkillHub / bundled）代码。
-
-### 0.1 分类映射表
-
-Hermes 中技能来源由安装路径 + 追踪文件共同确定：
-
-| 来源 | 物理路径 | 追踪文件 | 示例 |
-|------|---------|---------|------|
-| **Skills.sh** | `~/.agents/skills/<name>/` | `~/.agents/.skill-lock.json` — 含 `source: "vercel-labs/skills"`、`sourceType: "github"`、`installedAt` | skills.sh 安装的社区技能 |
-| **SkillHub** | `~/.hermes/skills/<name>/` | `~/.hermes/skills/.hub/lock.json` — 含 `source: "skills.sh"`、`identifier`、`scan_verdict` | SkillHub 来源的技能 |
-| **Bundled** | `~/.hermes/skills/<name>/` | `~/.hermes/skills/.bundled_manifest` — 哈希映射表 | Hermes 内置技能 |
-| **Agent-created** | `~/.hermes/skills/<name>/` | 不在以上任何文件中 | 用户/Agent 创建的自定义技能 |
-
-### 0.2 分类执行脚本
-
-执行以下命令一次性获取全部分类：
-
-```bash
-python3 << 'PYEOF'
-import json
-from pathlib import Path
-
-hermes_skills = Path.home() / ".hermes" / "skills"
-agents_skills = Path.home() / ".agents" / "skills"
-
-# 1. Skills.sh 安装: ~/.agents/.skill-lock.json
-skills_sh = {}
-lock = Path.home() / ".agents" / ".skill-lock.json"
-if lock.exists():
-    data = json.loads(lock.read_text())
-    for name, info in data.get("skills", {}).items():
-        skills_sh[name] = {
-            "source": info["source"], "source_type": info["sourceType"],
-            "installed": info["installedAt"], "updated": info["updatedAt"]
-        }
-
-# 2. SkillHub 安装: .hub/lock.json
-skillhub = {}
-hub_lock = hermes_skills / ".hub" / "lock.json"
-if hub_lock.exists():
-    data = json.loads(hub_lock.read_text())
-    for name, info in data.get("installed", {}).items():
-        skillhub[name] = {
-            "source": info["source"], "identifier": info["identifier"],
-            "installed": info["installed_at"]
-        }
-
-# 3. Bundled: .bundled_manifest
-bundled = set()
-manifest = hermes_skills / ".bundled_manifest"
-if manifest.exists():
-    for line in manifest.read_text().strip().splitlines():
-        name = line.split(":")[0]
-        bundled.add(name)
-
-# 4. Agent-created: ~/.hermes/skills/ 中剩余的技能
-agent_created = {}
-if hermes_skills.exists():
-    for d in hermes_skills.iterdir():
-        if d.is_dir() and (d / "SKILL.md").exists():
-            name = d.name
-            if name in bundled or name in skillhub:
-                continue
-            if name.startswith("."):
-                continue
-            agent_created[name] = {}
-
-# 5. ~/.agents/skills/ 中的所有技能都是 skills.sh 安装
-if agents_skills.exists():
-    for d in agents_skills.iterdir():
-        if d.is_dir() and (d / "SKILL.md").exists():
-            name = d.name
-            if name not in skills_sh:
-                skills_sh[name] = {"source": "unknown", "installed": "unknown"}
-
-print("=== Skills.sh 安装 ===")
-for n in sorted(skills_sh):
-    print(f"  {n:40s} source={skills_sh[n]['source']}")
-print(f"\n=== SkillHub 安装 ===")
-for n in sorted(skillhub):
-    print(f"  {n:40s} source={skillhub[n]['source']}")
-print(f"\n=== Bundled ===")
-for n in sorted(bundled):
-    print(f"  {n}")
-print(f"\n=== Agent-created ({len(agent_created)}) ===")
-for n in sorted(agent_created):
-    print(f"  {n}")
-PYEOF
-```
-
-### 0.3 分类规则
-
-| 条件 | 结论 | 评估含义 |
-|------|------|---------|
-| 在 `~/.agents/skills/` 中 | Skills.sh 安装 | 标准第三方评估（完整审计） |
-| 在 `.hub/lock.json` 中 | SkillHub 安装 | 标准第三方评估（完整审计） |
-| 在 `.bundled_manifest` 中 | Bundled | 跳过审计，标注"Bundled" |
-| 以上都不是 | Agent-created | 缩减审计（仅检查致命红线） |
-
-### 0.4 Curator 活跃度数据
-
-对 agent-created 技能，从 `hermes curator status` 获取活跃度指标：
-
-```bash
-hermes curator status 2>&1
-```
-
-输出中包含每个 agent-created 技能的 `activity`、`use`、`view`、`patches`、`last_activity`。这些数据进入评估表，作为"健康度"指标。技能被频繁使用和修补 → 高可信度。
-
-也可以用结构化数据源 `~/.hermes/logs/curator/<latest>/run.json` 获取更完整的 consolidation 关系和归档历史。
 
 ---
 
@@ -153,11 +36,8 @@ hermes curator status 2>&1
 
 ### 1.0 前置检查：本地已安装技能
 
-执行阶段 0 的来源分类，获取所有已安装技能的来源归属，然后：
-
-- **如果有同类技能已安装**：直接读取已安装的 SKILL.md，标注其来源（agent-created / skills.sh / SkillHub / bundled），跳过外部搜索和完整安全评估（首次方技能仅检查致命红线）
-- **如果是 agent-created 技能**：从 curator status 获取活跃度数据，作为 "健康度" 参考
-- **如果是已归档的 umbrella 子技能**：告知用户该技能已被合并到 umbrella，推荐使用 umbrella
+- **先检查本地**：执行 `ls ~/.agents/skills/` 和 `ls ~/.hermes/skills/`，查看用户是否已安装同类技能
+- **如果已安装**：直接读取已安装的 SKILL.md，跳过搜索和评估流程，直接进入对比或告知用户
 
 ### 1.1 多源并行搜索
 
@@ -223,12 +103,6 @@ hermes curator status 2>&1
 | Agent Trust Hub | | | |
 | Socket | | | |
 | Snyk | | | |
-| **来源分类** | | | |
-| **Curator 活跃度** | | | |
-
-新增的行含义：
-- **来源分类**：Skills.sh / SkillHub / Bundled / Agent-created。从阶段 0 的映射表直接获取。
-- **Curator 活跃度**：仅对 agent-created 技能生效，格式 `activity=X use=Y patches=Z last=Nd ago`。高活跃度（activity > 10）说明技能被频繁使用和修补，可信度更高。
 
 ---
 
@@ -238,28 +112,19 @@ hermes curator status 2>&1
 
 ### 3.1 读取源码
 
-**策略：根据来源选择不同的路径和审计深度。**
+**策略：根据来源选择最直接的路径。**
 
-- **Skills.sh 技能**：直接用 `git clone --depth 1` 克隆 GitHub 仓库（`owner/repo` 已知），避免 `web_extract` 被拦截：
-
+- **来自 skills.sh 的技能**：直接用 `git clone --depth 1` 克隆 GitHub 仓库（`owner/repo` 已知），避免 `web_extract` 被拦截：
   ```bash
   TMPDIR=$(mktemp -d) && git clone --depth 1 "https://github.com/{owner}/{repo}.git" "$TMPDIR"
   ```
+  克隆后查找 SKILL.md，常见目录结构（按优先级）：`.agents/skills/{name}/` → `.claude/skills/{name}/` → `.opencode/skills/{name}/` → `skills/{name}/` → 根目录。
 
-  克隆后查找 SKILL.md，常见目录结构（按优先级）：`.agents/skills/{name}/` → `.claude/skills/{name}/` → `.opencode/skills/{name}/` → `skills/{name}/` → 根目录。**完整安全审计（7 维）。**
-
-- **SkillHub 技能**：默认下载到临时目录：
-
+- **来自 SkillHub 的技能**：默认下载到临时目录：
   ```bash
   TMPDIR="/tmp/skillhub-tmp-$$" && mkdir -p "$TMPDIR"
   skillhub --dir "$TMPDIR" install <slug>
   ```
-
-  **完整安全审计（7 维）。**
-
-- **Agent-created 技能**：已在本地安装，直接读取 `~/.hermes/skills/<category>/<name>/SKILL.md`。从 curator status 获取活跃度数据作为健康度参考。**缩减审计（仅检查致命红线）。**
-
-- **Bundled 技能**：已在本地安装，跳过审计，标注 "Bundled — Hermes 内置"。
 
 读取 SKILL.md 后，如果它引用了其他文件（如 `reference.md`、`scripts/` 下的脚本），一并读取。完成后清理临时目录。
 
@@ -303,25 +168,16 @@ SkillHub 下载的 skill 常包含作者本机的硬编码路径。审计时必�
 
 对每个 skill 给出安全评分（1-10 分）。评分维度、分数段含义详见 `references/reference.md` 的"安全评分标准"部分。核心维度：Prompt 注入、凭证处理、代码执行、数据外泄、文件系统安全、插件系统、混淆内容。
 
-**根据来源调整评分策略：**
-
-| 来源 | 评分策略 |
-|------|---------|
-| Skills.sh / SkillHub | 完整 7 维评分，所有维度加权计算 |
-| Agent-created | 仅检查致命红线，有不通过项标记为"风险需排查"，默认标记为"非第三方，信任度较高" |
-| Bundled | 不评分，直接标注"Bundled — 无需审计" |
-
 ---
 
 ## 阶段 4：对比推荐与安装
 
 ### 4.1 生成综合对比表
 
-合并所有阶段信息，生成**单一综合对比表**，新增来源和 Curator 维度：
+合并所有阶段信息，生成**单一综合对比表**：
 
 | 指标 | Skill A | Skill B | Skill C |
 |------|---------|---------|---------|
-| **来源** | | | |
 | 安装量 | | | |
 | Stars | | | |
 | 更新频率 | | | |
@@ -329,27 +185,16 @@ SkillHub 下载的 skill 常包含作者本机的硬编码路径。审计时必�
 | Socket | | | |
 | Snyk | | | |
 | 自主安全评分 | | | |
-| **Curator 活跃度** | | | |
-| **被合并到** | | | |
 | 功能定位 | | | |
 | 核心风险点 | | | |
 
-- **来源**：Skills.sh / SkillHub / Agent-created / Bundled。基础分类，直接决定评估策略。
-- **Curator 活跃度**：仅 agent-created 技能有值。高活跃度 → 可信度高。格式：`activity=58 use=17 patches=24 last=1d ago`。
-- **被合并到**：如果技能已被 curator 合并到 umbrella（如 `arch-wsl-install → wsl-operations`），此列显示 umbrella 名称，并在推荐中指引用户使用 umbrella。
-
 ### 4.2 分级推荐
 
-**安全优先型：** 推荐安全评分最高、Agent Trust Hub 通过、有完整安全文档的 skill。Agent-created 技能在此维度优先（非第三方代码）。
+**安全优先型：** 推荐安全评分最高、Agent Trust Hub 通过、有完整安全文档的 skill。
 
-**功能优先型：** 推荐功能最全、更新最活跃、社区验证最多的 skill。Skills.sh 高安装量技能在此维度有优势。
+**功能优先型：** 推荐功能最全、更新最活跃、社区验证最多的 skill。
 
 **组合安装：** 同时安装两个 skills，日常用一个，安全参考用另一个。
-
-**Consolidation 感知推荐：**
-- 如果用户查询的技能已被 curator 归档（如 `quantitative-backtest`），先提示归档状态，再推荐替代品
-- 如果已被合并到 umbrella（如 `dida365-openapi` → `platform-integration`），直接推荐 umbrella，说明该技能已被整合到更全面的父技能中
-- 如果技能是 umbrella（如 `wsl-operations`），优先推荐 umbrella 并列出其覆盖的子技能范围
 
 ### 4.3 执行安装
 
