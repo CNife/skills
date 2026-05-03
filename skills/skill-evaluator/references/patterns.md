@@ -307,14 +307,89 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 rm -rf /tmp/skillhub-tmp-*
 # 清理 git clone 临时目录
 rm -rf /tmp/tmp.*
+
+# 清理 curator 缓存（一般无需手动）
+rm -rf ~/.hermes/skills/.hub/index-cache
+```
+
+---
+
+## Curator 数据集成操作速查
+
+### 命令速查
+
+| 命令 | 用途 | 输出特点 |
+|------|------|---------|
+| `hermes curator status` | 查看 Curator 状态 + 技能活跃度 | 包含 agent-created 技能列表，每个技能的 activity/use/view/patches/last_activity |
+| `hermes curator --help` | 查看可用子命令 | status/pin/unpin/restore/backup/rollback |
+| `hermes curator pin <name>` | 排查技能是否为 agent-created | 如果是 bundled/hub-installed 会报错 |
+
+### 结构化数据源
+
+Curator 每次运行会在 `~/.hermes/logs/curator/<timestamp>/` 生成：
+- `run.json` — 完整的运行数据（JSON），包含：archived 列表、consolidated 映射、pruned 列表、tool_calls
+- `REPORT.md` — 自然语言报告，解释 consolidation 和归档决策
+- `cron_rewrites.json` — 因 consolidation 而产生的 cron job 重写映射
+
+最新运行的目录可以通过 `ls -dt ~/.hermes/logs/curator/*/ | head -1` 获取。
+
+### Consolidation 关系解析
+
+要从 `run.json` 获取技能合并关系：
+
+```bash
+python3 -c "
+import json, glob
+from pathlib import Path
+dirs = sorted(glob.glob(str(Path.home()) + '/.hermes/logs/curator/*/'), reverse=True)
+if dirs:
+    run = json.loads(Path(dirs[0]).read_text())
+    for c in run.get('consolidated', []):
+        print(f'{c[\"name\"]} -> {c[\"into\"]}  ({c[\"reason\"]})')
+    print('---')
+    for a in run.get('archived', []):
+        print(f'[archived] {a}')
+"
+```
+
+输出类似：
+```
+arch-wsl-install -> wsl-operations  (Arch WSL package installation...)
+dida365-openapi -> platform-integration  (Dida365 task management API...)
+```
+
+### 评估流程中的 Curator 集成点
+
+```
+阶段 0（来源分类）
+  │
+  ├─ 执行分类脚本 → 对每个已安装技能标记来源
+  ├─ 执行 curator status → 获取 agent-created 技能的活跃度数据
+  └─ 解析 run.json → 获取 consolidation 关系（umbrella 映射）
+  │
+  ▼
+阶段 1（搜索候选）
+  ├─ 1.0 前置检查：阶段 0 的分类结果直接决定跳过还是继续
+  ...
+
+阶段 3（安全评估）
+  ├─ 3.1 来源决定审计深度（agent-created = 缩减 / 第三方 = 完整 / bundled = 跳过）
+  └─ 3.5 来源决定评分策略
+
+阶段 4（对比推荐）
+  └─ 4.2 consolidation 关系决定推荐方向（优先 umbrella）
 ```
 
 ```
 用户需求：评估/选择 skill
     │
     ├─ 是否指定了具体 skill 名称？
-    │   ├─ 是 → 检查本地是否已安装 → 是则跳过，跳到阶段 3（安全评估）
-    │   └─ 否 → 阶段 1（搜索候选）
+    │   ├─ 是 → 阶段 0（来源分类）→ 检查本地是否已安装
+    │   │   ├─ 已安装 + agent-created → 仅检查致命红线，跳过外部搜索
+    │   │   ├─ 已安装 + bundled → 跳过评估，标注"Hermes 内置"
+    │   │   ├─ 已安装 + 已归档 → 提示归档，推荐 umbrella 或替代品
+    │   │   └─ 未安装 → 阶段 1（搜索候选）
+    │   └─ 否 → 阶段 0（来源分类）→ 阶段 1（搜索候选）
     │
     ├─ 找到几个候选？
     │   ├─ 0 个 → 搜索失败，尝试替代搜索源或建议自建 skill
