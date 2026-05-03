@@ -1,114 +1,177 @@
 ---
 name: cnife-skills-repo
-description: Guide to the CNife/skills repository structure, Python project standards, pre-commit hooks, and PEP 723 single-script mode. Use when creating or modifying skills in ~/personal_code/skills/, setting up Python scripts for skills, configuring ruff/pre-commit, or when the user mentions their skills repository, adding a new skill to CNife/skills, or asks about the skill creation workflow. Also load when working with Python scripts inside any skill's scripts/ directory.
+description: Guide to managing and optimizing skills in the CNife/skills repository — quality gates, creation/publishing workflow, and the sub-agent verification loop for automated skill auditing and repair. Use when working with ~/personal_code/skills/, adding or modifying skills, running bulk operations across skills, or when the user mentions skill quality, verification, or repo maintenance.
 ---
 
 # CNife Skills Repository
 
-Personal skill repository at `~/personal_code/skills/`, published to `github.com/CNife/skills`.
-
-## Repository Structure
+Personal skills repository at `~/personal_code/skills/`, published to `github.com/CNife/skills`. Skills under `skills/<name>/` serve multiple agents (Hermes, OpenCode, Claude Code, etc.) via `bunx skills add`.
 
 ```
-~/personal_code/skills/
-├── .gitignore              # Python project ignores (pyc, cache, venv, uv.lock)
-├── .pre-commit-config.yaml # pre-commit hooks
-├── LICENSE
-├── README.md               # Skill table with links
-├── pyproject.toml          # Root Python project config
-├── uv.lock                 # Dependency lock file
-└── skills/
-    ├── <skill-name>/
-    │   ├── SKILL.md
-    │   ├── scripts/
-    │   │   └── <script>.py    # PEP 723 single-script mode
-    │   └── references/
-    ...
+skills/<skill-name>/
+├── SKILL.md              # Required — skill definition
+├── scripts/              # Python scripts (PEP 723)
+└── references/           # Reference files
 ```
 
-## Python Project Standards
+## Quality Gates
 
-### Root pyproject.toml
+Every skill in the repository MUST pass these checks before publishing.
 
-```toml
-[project]
-  name = "cnife-skills"
-  version = "0.1.0"
-  requires-python = ">=3.11"
-  dependencies = ["pyyaml>=6.0"]
+### Python Scripts (scripts/)
 
-[tool.ruff]
-  line-length = 100
-  target-version = "py311"
-
-  [tool.ruff.lint]
-    extend-select = ["I", "B", "UP", "C4", "PIE", "RUF", "W"]
-    # 允许中文全角标点
-    allowed-confusables = ["，", "。", "：", "；", "！", "？", "（", "）", "【", "】", "《", "》"]
-
-    [tool.ruff.lint.isort]
-      split-on-trailing-comma = false
-
-  [tool.ruff.format]
-    skip-magic-trailing-comma = true
-```
-
-### PEP 723 Single-Script Mode
-
-Every Python script in `scripts/` MUST use PEP 723 inline metadata:
+All Python scripts use PEP 723 inline metadata:
 
 ```python
-#!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pyyaml>=6.0"]  # or [] if stdlib-only
+# dependencies = []  # or ["package>=ver"]
 # ///
-"""Script docstring..."""
 ```
 
-Run with `uv run scripts/<script>.py`. uv auto-creates isolated env and installs deps.
+Run before commit:
 
-### Ruff Compliance
-
-Before committing:
 ```bash
 cd ~/personal_code/skills
 uv run ruff check --fix skills/
 uv run ruff format skills/
-uv lock
 ```
 
-Common fixes: `Dict/List/Tuple/Set` → `dict/list/tuple/set`, import sorting, unused imports, bare `except` → specific exceptions, `raise ... from err`, unnecessary `mode="r"`.
+### SKILL.md Frontmatter
+
+Required fields:
+
+```yaml
+---
+name: <skill-name>          # lowercase, hyphens
+description: >              # single-line trigger description
+  What this skill does and when to load it. Be specific about triggers.
+---
+```
+
+Verify frontmatter across all skills:
+
+```bash
+python3 -c "
+import yaml, glob
+for f in sorted(glob.glob('skills/*/SKILL.md')):
+    with open(f) as fh:
+        meta = yaml.safe_load(fh.read().split('---')[1])
+    name = f.split('/')[1]
+    errors = []
+    if not meta.get('name'): errors.append('missing name')
+    if not meta.get('description'): errors.append('missing description')
+    status = '❌ ' + ', '.join(errors) if errors else '✅'
+    print(f'{status} {name}')
+"
+```
 
 ### Pre-commit Hooks
 
-- **pre-commit-hooks**: large files, merge conflicts, yaml/toml/json validation, debug statements, private keys, EOF fixer, line endings, trailing whitespace
-- **uv-pre-commit**: `uv lock`
-- **ruff-pre-commit**: `ruff check --fix` + `ruff format`
-- **rumdl-pre-commit**: Markdown linting and formatting
+Configured in `.pre-commit-config.yaml`:
+- pre-commit-hooks (format/validate)
+- uv-pre-commit (`uv lock`)
+- ruff-pre-commit (check + format)
+- rumdl (markdown linting)
 
-## Skill Creation Workflow
+## Skill Creation / Publishing Workflow
 
-1. Create/modify in `~/personal_code/skills/skills/<skill-name>/`
-2. Add PEP 723 header to Python scripts
-3. Run ruff check/format + uv lock
-4. Update README.md skill table
-5. `git add -A && git commit -m "简短中文描述" && git push`
-6. `bunx skills add CNife/skills@<skill-name> -g -y`
-7. Hermes discovers via `skills.external_dirs: [~/.agents/skills/]`
+```bash
+# 1. Create skill directory and SKILL.md
+mkdir -p skills/<name>/scripts
+# Write SKILL.md with frontmatter
 
-## Quality Gates
+# 2. Quality checks
+uv run ruff check --fix skills/<name>/
+uv run ruff format skills/<name>/
 
-- All Python scripts pass `ruff check` and `ruff format`
-- All scripts have PEP 723 inline metadata
-- No `__pycache__/` or `.pyc` committed
-- No `uv.lock` committed (in .gitignore)
-- Git commit: short Chinese, one line, no prefix
-- `uv lock` runs via pre-commit
+# 3. Update README.md skill table
+# Add row in README.md
 
-## Audit: Identifying Unused Skills
+# 4. Publish
+git add -A
+git commit -m "feat(<name>): brief description"
+git push
 
-The `audit-hermes-agent-skills` skill analyzes usage from `~/.hermes/state.db`:
-- **standalone** (only in `~/.hermes/skills/`): safe to delete
-- **external** (in `~/.agents/skills/`): shared across ALL agents — confirm before deleting
-- **builtin** (Hermes built-in): disable via `config.yaml` `skills.disabled`
+# 5. Install globally (skills.sh)
+bunx skills add CNife/skills@<name> -g -y
+```
+
+## Sub-Agent Verification Loop
+
+Use `delegate_task` to run a closed-loop audit-fix-verify cycle when bulk-maintaining skills. This prevents the main agent from declaring work done when issues remain.
+
+### Workflow
+
+```
+Phase 1: Sub-agent scans + reports issues
+         ↓
+Phase 2: Main agent fixes each issue
+         ↓
+Phase 3: Sub-agent re-verifies → issues remain? → back to Phase 2
+                             → all clear?  → done
+```
+
+### Phase 1: Scan (sub-agent)
+
+Spawn a sub-agent with **read-only tools only** (`toolsets=["file"]`) to scan all skills and produce a structured issue report:
+
+```markdown
+## Issues Report
+### Missing PEP 723 header
+- skills/foo/scripts/run.py
+- skills/bar/scripts/deploy.py
+
+### SKILL.md missing frontmatter `description`
+- skills/baz/SKILL.md
+
+### Ruff compliance failures
+- skills/qux/scripts/analyze.py:15: unused import
+
+### Stale README.md (skill listed but directory missing)
+- skills/archived-skill (in README but no directory)
+```
+
+Pass a clear context to the sub-agent listing what to check:
+
+```python
+from hermes_tools import delegate_task
+
+result = delegate_task(
+    goal="Scan all skills in ~/personal_code/skills/skills/ and report issues",
+    context="""Check each skill for:
+1. SKILL.md has valid frontmatter (name + description)
+2. Python scripts in scripts/ have PEP 723 headers
+3. ruff compliance (run ruff check --fix dry-run)
+4. README.md matches actual skill directories""",
+    toolsets=["file", "terminal"],
+)
+```
+
+The sub-agent returns a structured markdown report. **Do not skip this step — always verify the report exists with actual findings before proceeding.**
+
+### Phase 2: Fix (main agent)
+
+Work through each issue category from the report:
+
+1. **Bulk fixes first** — use `execute_code` or `patch` for repeated patterns (same fix across N files)
+2. **Manual fixes second** — unique per-skill issues
+3. **Commit strategically** — group related fixes into atomic commits; do NOT lump unrelated changes (README update + code fix + new skill) into one commit
+
+### Phase 3: Re-verify (sub-agent)
+
+Spawn the same sub-agent again with the same scan criteria. Compare against Phase 1's report:
+
+- **If new issue count == 0** → verification passed, proceed to final commit + push
+- **If new issue count < previous count** → progress made, loop back to Phase 2
+- **If new issue count >= previous count** → the fix approach is wrong, pause and reassess strategy
+
+Use a fresh sub-agent instance to avoid stale context biasing the verification.
+
+### Loop Termination
+
+| Condition | Action |
+|-----------|--------|
+| 3 consecutive rounds without reduction | Abort loop, report blockers to user |
+| All issues resolved | Final commit, push, done |
+| Partial resolution + user decides remaining are acceptable | Commit partial, note remaining as known issues |
