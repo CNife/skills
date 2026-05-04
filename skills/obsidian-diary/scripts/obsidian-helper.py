@@ -33,22 +33,29 @@ def _load_vaults() -> dict[str, dict]:
         print("Obsidian diary configuration not found.", file=sys.stdout)
         print(f"Please create {CONFIG_PATH} with the following structure:", file=sys.stdout)
         print(file=sys.stdout)
-        print(json.dumps({
-            "vaults": {
-                "work": {
-                    "base": "/path/to/obsidian/work-vault",
-                    "diary_dir": "工作日志",
-                    "template": "日志模板.md",
-                    "exclude_meta": ["AGENTS.md", "任务.md", "日志模板.md"],
+        print(
+            json.dumps(
+                {
+                    "vaults": {
+                        "work": {
+                            "base": "/path/to/obsidian/work-vault",
+                            "diary_dir": "工作日志",
+                            "template": "日志模板.md",
+                            "exclude_meta": ["AGENTS.md", "任务.md", "日志模板.md"],
+                        },
+                        "personal": {
+                            "base": "/path/to/obsidian/personal-vault",
+                            "diary_dir": "个人日记",
+                            "template": "日记模板.md",
+                            "exclude_meta": ["AGENTS.md"],
+                        },
+                    }
                 },
-                "personal": {
-                    "base": "/path/to/obsidian/personal-vault",
-                    "diary_dir": "个人日记",
-                    "template": "日记模板.md",
-                    "exclude_meta": ["AGENTS.md"],
-                },
-            }
-        }, ensure_ascii=False, indent=2), file=sys.stdout)
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=sys.stdout,
+        )
         sys.exit(1)
 
     with open(CONFIG_PATH, encoding="utf-8") as f:
