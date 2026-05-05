@@ -2,7 +2,7 @@
 
 ## Vault 路径
 
-- 根目录：由配置文件 `~/.config/cnife-skills/obsidian-diary.json` 中的 `vaults.personal.base` 决定
+- 根目录：`/mnt/c/Obsidian`（由配置文件 `~/.config/cnife-skills/obsidian-diary.json` 中的 `vaults.personal.base` 决定）
 - 日记目录：`个人日记/YYYY/MM/`
 - 文件命名：`YYYY年M月D日星期X.md`（如 `2026年4月17日星期五.md`）
 - 模板文件：`个人日记/日记模板.md`
