@@ -108,11 +108,7 @@ def extract_session(db: sqlite3.Connection, session_id: str, since_ts: int) -> s
     if not turns:
         return None
 
-    lines = [
-        f"=== Session: {row[1]} ({row[0]})",
-        f"Project: {row[2]}",
-        "",
-    ]
+    lines = [f"=== Session: {row[1]} ({row[0]})", f"Project: {row[2]}", ""]
     for turn in turns:
         lines.append(f"[User] {turn['user_prompt']}")
         for tc in turn["tool_calls"]:
@@ -184,14 +180,14 @@ def _parse_qwen_chat(chat_path: Path, since_ts: int) -> list[dict] | None:
                         elif phase == "result" and current_turn:
                             items = payload.get("outputHistoryItems", [])
                             if items:
-                                output_text = "\n".join(
-                                    item.get("text", "") for item in items
+                                output_text = "\n".join(item.get("text", "") for item in items)
+                                current_turn["tool_calls"].append(
+                                    {
+                                        "tool": "command",
+                                        "name": raw_cmd,
+                                        "output": truncate(output_text, 200),
+                                    }
                                 )
-                                current_turn["tool_calls"].append({
-                                    "tool": "command",
-                                    "name": raw_cmd,
-                                    "output": truncate(output_text, 200),
-                                })
 
                 elif entry_type == "user":
                     if current_turn:
@@ -225,26 +221,34 @@ def _parse_qwen_chat(chat_path: Path, since_ts: int) -> list[dict] | None:
                             tool_name = fc.get("name", "unknown")
                             args = fc.get("args", {})
                             if tool_name == "run_shell_command":
-                                current_turn["tool_calls"].append({
-                                    "tool": "bash",
-                                    "command": truncate(args.get("command", ""), 150),
-                                    "output": None,
-                                })
+                                current_turn["tool_calls"].append(
+                                    {
+                                        "tool": "bash",
+                                        "command": truncate(args.get("command", ""), 150),
+                                        "output": None,
+                                    }
+                                )
                             elif tool_name == "write":
-                                current_turn["tool_calls"].append({
-                                    "tool": "write",
-                                    "path": args.get("path", args.get("file_path", "")),
-                                })
+                                current_turn["tool_calls"].append(
+                                    {
+                                        "tool": "write",
+                                        "path": args.get("path", args.get("file_path", "")),
+                                    }
+                                )
                             elif tool_name in ("read_file", "read"):
-                                current_turn["tool_calls"].append({
-                                    "tool": "read",
-                                    "path": args.get("path", args.get("file_path", "")),
-                                })
+                                current_turn["tool_calls"].append(
+                                    {
+                                        "tool": "read",
+                                        "path": args.get("path", args.get("file_path", "")),
+                                    }
+                                )
                             else:
-                                current_turn["tool_calls"].append({
-                                    "tool": tool_name,
-                                    "args": truncate(json.dumps(args, ensure_ascii=False), 100),
-                                })
+                                current_turn["tool_calls"].append(
+                                    {
+                                        "tool": tool_name,
+                                        "args": truncate(json.dumps(args, ensure_ascii=False), 100),
+                                    }
+                                )
                     if texts:
                         current_turn["assistant_text"] = truncate(" ".join(texts), 200)
 
@@ -353,20 +357,14 @@ def extract_qwen_sessions(since_ts: int, limit: int = 50) -> list[str]:
                 for msg in messages:
                     user_text = truncate(msg.get("message", ""), 300)
                     if user_text:
-                        turns.append({
-                            "user_prompt": user_text,
-                            "tool_calls": [],
-                            "assistant_text": None,
-                        })
+                        turns.append(
+                            {"user_prompt": user_text, "tool_calls": [], "assistant_text": None}
+                        )
 
             if not turns:
                 continue
 
-            lines = [
-                f"=== Session: (Qwen Code) {sid}",
-                f"Project: {project_path}",
-                "",
-            ]
+            lines = [f"=== Session: (Qwen Code) {sid}", f"Project: {project_path}", ""]
             for turn in turns:
                 lines.append(f"[User] {turn['user_prompt']}")
                 for tc in turn.get("tool_calls", []):

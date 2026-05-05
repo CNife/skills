@@ -81,25 +81,25 @@ find /mnt/c/Obsidian/个人 -name "*.md" -newermt "2026-04-27 20:00" ! -newermt 
 
 ### Step 2b：分类（两条信号，按顺序判定）
 
-**信号 1 — 主题活动词所在的 vault**
+**信号 1 — 主题活动词所在的目录**
 
-对每条活动提取核心主题词，比较在两个 vault 中的命中文件数：
+对每条活动提取核心主题词，比较在工作日志/个人日记两个目录中的命中文件数：
 
 ```bash
-# 工作 vault 命中数
-work_hits=$(grep -rlc "$主题词" /mnt/c/Obsidian/工作/ --include='*.md' 2>/dev/null || echo 0)
-# 个人 vault 命中数
-personal_hits=$(grep -rlc "$主题词" /mnt/c/Obsidian/个人/ --include='*.md' 2>/dev/null || echo 0)
+# 工作日志目录命中数
+work_hits=$(grep -rlc "$主题词" /mnt/c/Obsidian/工作/工作日志/ --include='*.md' 2>/dev/null || echo 0)
+# 个人日记目录命中数
+personal_hits=$(grep -rlc "$主题词" /mnt/c/Obsidian/个人/个人日记/ --include='*.md' 2>/dev/null || echo 0)
 ```
 
 | 结果 | 归属 |
 |------|------|
-| 工作 vault 命中数 > 个人 vault | **工作** |
-| 个人 vault 命中数 > 工作 vault | **个人** |
+| 工作日志目录命中数 > 个人日记目录 | **工作** |
+| 个人日记目录命中数 > 工作日志目录 | **个人** |
 | 相等或都为零 | 走信号 2 |
 
-> **示例：**「FRP TLS 加密配置」→ 搜 `FRP`，个人 vault 命中更多 → 个人
-> 「OneReason 数据库修复」→ 搜 `OneReason`，工作 vault 命中更多 → 工作
+> **示例：**「FRP TLS 加密配置」→ 搜 `FRP`，个人日记目录命中更多 → 个人
+> 「OneReason 数据库修复」→ 搜 `OneReason`，工作日志目录命中更多 → 工作
 
 **信号 2 — 日期上下文兜底**
 

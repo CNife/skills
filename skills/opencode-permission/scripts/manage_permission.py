@@ -30,6 +30,7 @@ ACTIONS = ("allow", "ask", "deny")
 
 # ─── 格式化 ───────────────────────────────────────────────────
 
+
 def format_bash_section(text: str) -> str:
     """确保 permission.bash 中每条规则独占一行。
 
@@ -78,6 +79,7 @@ def format_bash_section(text: str) -> str:
 
 # ─── 备份 ─────────────────────────────────────────────────────
 
+
 def backup_config(path: Path) -> Path | None:
     """创建带时间戳的备份文件。"""
     if not path.exists():
@@ -89,6 +91,7 @@ def backup_config(path: Path) -> Path | None:
 
 
 # ─── JSON 模型操作 ─────────────────────────────────────────────
+
 
 def load_model(path: Path):
     """加载 JSONC 文件为可编辑的模型树（保留所有注释）。"""
@@ -153,6 +156,7 @@ def _write_and_format(config_path: Path, model):
 
 # ─── 命令实现 ─────────────────────────────────────────────────
 
+
 def cmd_add(args):
     """添加单条或多条权限规则。"""
     backup_config(args.config)
@@ -166,9 +170,7 @@ def cmd_add(args):
             print(f"规则已存在: {rule} → {args.action}")
             skipped += 1
             continue
-        bash_obj.keys.append(
-            DoubleQuotedString(characters=rule, raw_value=f'"{rule}"')
-        )
+        bash_obj.keys.append(DoubleQuotedString(characters=rule, raw_value=f'"{rule}"'))
         bash_obj.values.append(
             DoubleQuotedString(characters=args.action, raw_value=f'"{args.action}"')
         )
@@ -178,7 +180,7 @@ def cmd_add(args):
 
     if added:
         print(f"已添加 {added} 条规则 → {args.action}")
-    print(f"注意: 修改配置后需要重启 OpenCode 才能生效。")
+    print("注意: 修改配置后需要重启 OpenCode 才能生效。")
 
 
 def cmd_remove(args):
@@ -197,7 +199,7 @@ def cmd_remove(args):
 
     _write_and_format(args.config, model)
     print(f"已删除: {args.rule}")
-    print(f"注意: 修改配置后需要重启 OpenCode 才能生效。")
+    print("注意: 修改配置后需要重启 OpenCode 才能生效。")
 
 
 def cmd_list(args):
@@ -223,7 +225,7 @@ def cmd_list_all(args):
     model = load_model(args.config)
     root = model.value
     if not isinstance(root, JSONObject):
-        print(f"配置文件根节点不是 JSON 对象")
+        print("配置文件根节点不是 JSON 对象")
         sys.exit(1)
 
     perm_idx = None
@@ -265,10 +267,11 @@ def cmd_format(args):
     formatted = format_bash_section(text)
     args.config.write_text(formatted, "utf-8")
     print(f"已格式化: {args.config}")
-    print(f"注意: 修改配置后需要重启 OpenCode 才能生效。")
+    print("注意: 修改配置后需要重启 OpenCode 才能生效。")
 
 
 # ─── 入口 ────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="管理 OpenCode permission 规则")
