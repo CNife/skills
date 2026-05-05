@@ -25,8 +25,8 @@ description: 将会话内容总结并写入 Obsidian 工作日志或个人日记
 当脚本输出 `CONFIG_MISSING=true` 时，执行以下流程：
 
 1. **询问用户**每个 vault 的 Obsidian 根目录（本地绝对路径），例如：
-   - work vault：`/Users/cnife/Obsidian/工作` 或 `/mnt/c/Obsidian/工作`
-   - personal vault：`/Users/cnife/Obsidian/个人`
+   - work vault：`/mnt/c/Obsidian`
+   - personal vault：`/mnt/c/Obsidian`
 2. 其余字段（`diary_dir`、`template`、`exclude_meta`）使用默认值，除非用户明确要求修改
 3. 用 Write 工具创建配置文件（先确保目录存在）：
 
