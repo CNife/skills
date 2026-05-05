@@ -14,3 +14,4 @@ uv.lock
 
 # Qwen Code
 .qwen/
+.worktrees/
