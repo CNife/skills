@@ -325,18 +325,12 @@ def get_curator_data() -> dict:
             "archived": set[str],           # 已归档技能
         }
     """
-    result: dict = {
-        "agent_created": set(),
-        "activity": {},
-        "consolidated": {},
-        "archived": set(),
-    }
+    result: dict = {"agent_created": set(), "activity": {}, "consolidated": {}, "archived": set()}
 
     # Method 1: Parse hermes curator status
     try:
         proc = subprocess.run(
-            ["hermes", "curator", "status"],
-            capture_output=True, text=True, timeout=10,
+            ["hermes", "curator", "status"], capture_output=True, text=True, timeout=10
         )
         if proc.returncode == 0:
             # Scan all lines for skill rows matching: name  activity=N  use=N ...
@@ -370,9 +364,8 @@ def get_curator_data() -> dict:
     # Method 2: Read latest run.json for consolidation and archive data
     try:
         import glob
-        log_dirs = sorted(
-            glob.glob(str(HERMES_HOME / "logs" / "curator" / "*/")), reverse=True
-        )
+
+        log_dirs = sorted(glob.glob(str(HERMES_HOME / "logs" / "curator" / "*/")), reverse=True)
         if log_dirs:
             run_path = Path(log_dirs[0]) / "run.json"
             if run_path.exists():
@@ -556,7 +549,16 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
     ws = wb.active
     ws.title = "技能审计"
 
-    headers = ["技能名称", "来源", "启用状态", "描述（中文）", "Curator活跃度", "被合并到", "审计建议", "我的决策"]
+    headers = [
+        "技能名称",
+        "来源",
+        "启用状态",
+        "描述（中文）",
+        "Curator活跃度",
+        "被合并到",
+        "审计建议",
+        "我的决策",
+    ]
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
     thin_border = Border(
@@ -575,7 +577,15 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
     for i, w in enumerate([25, 14, 10, 60, 20, 20, 30, 12], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
-    source_priority = {"builtin": 0, "hub": 1, "skills.sh": 1, "skillhub": 1, "agent-created": 2, "local": 3, "external": 4}
+    source_priority = {
+        "builtin": 0,
+        "hub": 1,
+        "skills.sh": 1,
+        "skillhub": 1,
+        "agent-created": 2,
+        "local": 3,
+        "external": 4,
+    }
     all_items = []
     for name, info in skills.items():
         stat = call_stats.get(name)
@@ -589,7 +599,7 @@ def generate_xlsx(skills: dict[str, dict], call_stats: dict[str, dict]) -> str:
         # Curator 活跃度格式化
         curator_act = info.get("curator_activity", {})
         if curator_act:
-            act_str = f"activity={curator_act.get('activity','?')} use={curator_act.get('use','?')} patches={curator_act.get('patches','?')} last={curator_act.get('last_activity','?')}"
+            act_str = f"activity={curator_act.get('activity', '?')} use={curator_act.get('use', '?')} patches={curator_act.get('patches', '?')} last={curator_act.get('last_activity', '?')}"
         else:
             act_str = ""
 

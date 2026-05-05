@@ -4,6 +4,7 @@
 # dependencies = []
 # ///
 """Calculate total installed package size on Arch Linux."""
+
 import subprocess
 
 UNIT_TO_MIB = {"B": 1 / (1024 * 1024), "KiB": 1 / 1024, "MiB": 1, "GiB": 1024}

@@ -52,8 +52,8 @@ description: 在会话问题解决得差不多时提醒我整理知识到 Obsidi
 ```json
 {
   "vaults": {
-    "personal": { "base": "/mnt/c/Obsidian/个人", "diary_dir": "个人日记", ... },
-    "work":     { "base": "/mnt/c/Obsidian/工作", "diary_dir": "工作日志", ... }
+    "personal": { "base": "/mnt/c/Obsidian", "diary_dir": "个人日记", ... },
+    "work":     { "base": "/mnt/c/Obsidian", "diary_dir": "工作日志", ... }
   }
 }
 ```
