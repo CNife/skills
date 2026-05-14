@@ -32,7 +32,39 @@ description: >
 
 ---
 
+## 术语澄清
+
+用户提问时可能混淆以下概念，先理解再执行搜索：
+
+| 用户说 | 实际指向 | 对应操作 |
+|--------|---------|---------|
+| `skill.sh` | **文件名** — 仓库根目录下的 `skill.sh` 安装脚本 | 检查仓库是否有此文件（非标准，极少数仓库使用） |
+| `skills.sh` | **生态系统** — `bunx skills` CLI 工具 | `bunx skills find` / `bunx skills add` |
+| `skillhub` | **SkillHub** — `skillhub` CLI | `skillhub search` / `skillhub install` |
+| `SkillsMP` | **SkillsMP** — `skills` CLI | `skills search` / `skills install` |
+
+**常见歧义**：用户问"能通过 skill.sh 安装吗"，可能是问 skills.sh 生态系统（`bunx skills`），而非检查仓库里有没有 `skill.sh` 文件。**先反问确认再行动。**
+
+---
+
 ## 阶段 1：搜索候选
+
+### ⚠️ 搜索前必读：术语澄清
+
+用户说 **"skill.sh"** 或 **"skillhub"** 时，指的不是 GitHub 仓库里的文件名，而是两个平台/CLI：
+- **skills.sh** — 平台，CLI 命令为 `bunx skills`（搜索 `bunx skills find`，安装 `bunx skills add`）
+- **SkillHub** — 平台，CLI 命令为 `skillhub`（搜索 `skillhub search`，安装 `skillhub install`）
+
+不要跑去 GitHub 仓库找叫 `skill.sh` 的文件——那是错误方向。先查平台是否收录。
+
+### ⚠️ 必须先加载本技能（关键流程约束）
+
+**当用户提出任何「找技能」「有没有 X 的技能」「评估/对比/推荐 skill」等请求时，必须立即加载本 skill（skill_view('skill-evaluator')），按照以下流程执行。不得先做 ad-hoc 搜索、不得凭记忆回答、不得跳过流程直接推荐。**
+
+这是最常被违反的规则。即使你「知道」有哪些技能可用，也必须走完整搜索-评估-推荐流程，原因：
+- 技能市场在不断更新，你「知道」的可能已过时
+- 安全风险需要逐行审计，不能靠记忆判断
+- 用户需要可验证的对比数据，而不是凭印象的推荐
 
 ### 1.0 前置检查：本地已安装技能
 
@@ -41,22 +73,28 @@ description: >
 
 ### 1.1 多源并行搜索
 
-**同时发起两个搜索，不等彼此**，以最快找到候选：
+**同时发起三个搜索，不等彼此**，以最快找到候选：
 
 - **Skills.sh**（全球生态，社区验证多）：
   ```bash
   bunx skills find [关键词]
   ```
-  **注意**：经常超时（60s+）。Agent 的 shell/terminal 工具自带超时机制，并行发起 SkillHub 搜索即可，谁先完成用谁的结果。
+  **注意**：经常超时（60s+）。Agent 的 shell/terminal 工具自带超时机制，并行发起其他搜索，谁先完成用谁的结果。
 
 - **SkillHub**（中国优化，速度快，中文技能多）：
   ```bash
   skillhub search [关键词]
   ```
 
+- **SkillsMP**（跨平台生态，独立市场）：
+  ```bash
+  skills search [关键词]
+  ```
+  或直接 `skills list` 列出所有索引技能。SkillsMP 使用 `skills install <name>` 安装，是独立于 skills.sh 和 SkillHub 的第三方市场。
+
 ### 1.2 记录候选列表
 
-对每个候选 skill，记录：名称（`owner/repo@skill-name`）、安装量、来源（skills.sh / SkillHub）、GitHub 仓库 URL（从 `owner/repo` 直接推导：`https://github.com/owner/repo`）。
+对每个候选 skill，记录：名称（`owner/repo@skill-name`）、安装量、来源（skills.sh / SkillHub / SkillsMP）、GitHub 仓库 URL（从 `owner/repo` 直接推导：`https://github.com/owner/repo`）。
 
 ### 1.3 快速过滤
 
@@ -90,7 +128,7 @@ description: >
 
 从 `commit.author.date` 判断最近一次提交时间和提交间隔。详见 `references/patterns.md` 中的 GitHub API 元数据获取。
 
-**注意**：如果 skill 是 SkillHub 独占（无公开 GitHub 仓库），更新频率和活跃度指标标记为 N/A，在可信度评级中相应降级。
+**注意**：如果 skill 是 SkillHub 独占（无公开 GitHub 仓库），更新频率和活跃度指标标记为 N/A，在可信度评级中相应降级。同时在阶段 4 推荐时加入跨平台可用性检查（详见 `references/patterns.md` 第 9 节）。
 
 ### 2.3 信息汇总表
 
@@ -196,9 +234,15 @@ SkillHub 下载的 skill 常包含作者本机的硬编码路径。审计时必�
 
 **组合安装：** 同时安装两个 skills，日常用一个，安全参考用另一个。
 
+**⚠️ 呈现推荐后不要问"装哪个"。** 用户很可能回答选择标准（如"功能优先""兼容 Hermes 和 OpenCode"），而不是安装指令。如果用户回答的是标准，说明你的推荐还没到——回到 4.1 补充信息后重新推荐。
+
+只有用户明确说出 **"安装 X"、"装 X"、"install X"、"用 X"** 等字眼，才进入阶段 4.3。误将选择标准当安装指令是常见陷阱。
+
 ### 4.3 执行安装
 
-用户确认后，根据技能来源选择正确的安装命令。完整命令速查和注意事项详见 `references/patterns.md`。
+**⚠️ 确认信号必须是明确的安装指令。** 用户说"装 X"、"安装 X"、"install X"才视为确认。用户说"功能优先"、"跨平台兼容"、"兼容 Hermes 和 OpenCode"等是选择标准，不是安装确认——说明阶段 4.2 还没完成。
+
+确认后根据技能来源选择正确的安装命令。完整命令速查和注意事项详见 `references/patterns.md`。
 
 **Skills.sh 技能：**
 ```bash
@@ -210,6 +254,24 @@ bunx skills add {owner}/{repo}@{skill-name} -g -y
 skillhub --dir ~/.hermes/skills/ install {slug}
 ```
 注意 `--dir` 是全局选项，必须放在子命令 `install` 之前。
+
+**⚠️ Hermes `external_dirs` 配置影响安装目标：** 如果用户的 Hermes 配置了 `skills.external_dirs` 自动扫描 `~/.agents/skills/`，则 `~/.agents/skills/` 是 Hermes 和 OpenCode/Claude Code 等 agent 的共享技能目录。此时 SkillHub 技能应安装到 `~/.agents/skills/` 而非 `~/.hermes/skills/`：
+
+```bash
+# 当 Hermes 通过 external_dirs 发现 ~/.agents/skills/ 时：
+skillhub --dir ~/.agents/skills/ install {slug}
+```
+
+**判断方法：** 检查 Hermes 配置中是否有 `skills.external_dirs` 指向 `~/.agents/skills/`。如有，优先使用 `~/.agents/skills/` 作为安装目标。
+
+**SkillsMP 技能：**
+```bash
+skills install {name}
+```
+安装到 SkillsMP 自己的目录。手动复制或 symlink 到 `~/.hermes/skills/` 下：
+```bash
+ln -s ~/.local/share/skillsmp/{name} ~/.hermes/skills/{name}
+```
 
 ### 4.4 多 Agent 兼容处理
 
@@ -224,14 +286,17 @@ skillhub --dir ~/.hermes/skills/ install {slug}
 **单一真相源原则：**
 - Skills.sh 安装以 `~/.agents/skills/` 为主目录
 - Hermes 通过 `skills.external_dirs` 配置扫描 `~/.agents/skills/`，无需软链接或副本
-- SkillHub 安装以 `~/.hermes/skills/` 为主目录
+- SkillHub 安装以 `~/.hermes/skills/` 为主目录。但如果 Hermes 配置了 external_dirs 指向 `~/.agents/skills/`，则 SkillHub 也应安装到 `~/.agents/skills/`，避免技能分散在两个目录
 
 ### 4.5 安装后验证
 
-1. 检查安装路径：确认 skill 文件存在于目标 Agent 的技能目录中
-2. 读取已安装 SKILL.md：确认内容与预期一致
-3. 确认安全审计结果与评估时一致
-4. 提醒用户审查 SKILL.md 内容后再使用
+1. **检查安装路径**：确认 skill 文件存在于目标 Agent 的技能目录中
+2. **读取已安装 SKILL.md**：确认内容与预期一致
+3. **确认安全审计结果**：与评估时一致
+4. **跨 Agent 验证（external_dirs 场景）**：如果安装到共享目录（如 `~/.agents/skills/`），验证两个 Agent 都能发现：
+   - Hermes：`hermes skills list | grep <skill-name>`（确认状态为 enabled）
+   - OpenCode/其他 agent：`ls ~/.agents/skills/<skill-name>/SKILL.md`（确认文件存在可读）
+5. **提醒用户审查**：提醒用户阅读 SKILL.md 内容后再使用
 
 ---
 

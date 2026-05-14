@@ -8,7 +8,7 @@
 |------|------|---------|
 | `web_extract` / `mcp_jina_read_url` | 将 GitHub / skills.sh / raw.githubusercontent.com 判定为内网地址，直接拒绝访问 | `git clone` 克隆仓库后本地读取，或用 `curl -sL` + `head` 读取 Raw 文件 |
 | `skills.sh CLI` | `bunx skills find` 经常超时（60s+ 无响应） | 等超时后改用 SkillHub 搜索或 GitHub API 搜索 |
-| `SkillHub show` | 不存在此子命令，SkillHub CLI 只有 search/install/upgrade/list/self-upgrade | 用 `skillhub --dir /tmp/xxx install <slug>` 下载到临时目录后读取源码 |
+| `SkillHub show` / `info` | 不存在 show/info 子命令，SkillHub CLI 只有 search/install/upgrade/list/self-upgrade | 用 `skillhub --dir /tmp/xxx install <slug>` 下载到临时目录后读取源码 |
 
 ### `git clone` 源码获取（核心备用方案）
 
@@ -151,6 +151,46 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 
 **检查方法：** 搜索 scripts 中所有 `find`、`rm`、`ls` 命令的目标路径，确认是否与当前用户/home 目录一致。
 
+### 9. 混淆 skill.sh/skillhub 含义
+
+**错误做法：** 用户问"能通过 skill.sh 安装吗"，你跑去 GitHub 仓库找 `skill.sh` 文件
+
+**正确做法：** `skill.sh` 指 **skills.sh 平台**（CLI: `bunx skills`），`skillhub` 指 **SkillHub 平台**（CLI: `skillhub`）。两者都是独立技能市场/注册表。用户问安装渠道时，先查这两个平台是否收录该技能，不要脑补到文件名上。
+
+**歧义根因：** "skill.sh" 恰好是一个合法的文件名（shell 脚本后缀），但作为安装渠道问法时 99% 情况指 skills.sh 平台。SkillHub 没有同名文件歧义，直接识别为平台名。
+
+**判断标准：**
+- 如果用户问的是"是否能通过 skill.sh 安装"→ 查 skills.sh 平台
+- 如果用户问的是"skillhub 上有吗"→ 查 SkillHub 平台
+- 如果用户问的是"有没有 skill.sh 安装脚本"→ 才去查 repo 文件列表
+
+### 10. 用错卸载工具
+
+**问题：** 直接用 `rm -rf` 删除 skill 目录，导致 lock/state 文件、其他 agent 的 symlink 残留。
+
+**正确做法：** 不同安装工具对应的卸载方式不同，需逐个清理：
+
+| 安装来源 | 卸载命令 | 清理内容 |
+|---------|---------|---------|
+| Skills.sh (`bunx skills add`) | `bunx skills remove <owner/repo@skill> -g` | 目录 + 所有 agent symlink + 状态文件 |
+| SkillHub (`skillhub install`) | `skillhub remove <slug>` | 目录 + `.skills_store_lock.json` 条目 |
+| 手动 git clone | 手动 `rm -rf` | 需要额外检查 lock/state 文件 |
+
+**检查残留命令：**
+```bash
+# 检查 lock 文件中的残留条目
+cat ~/.agents/skills/.skills_store_lock.json
+
+# 检查 dangling symlink
+find ~/.agents/skills -xtype l
+find ~/.hermes/skills -xtype l
+
+# 检查 Hermes 技能列表有残留名称
+hermes skills list
+```
+
+**核心原则：** 谁安装的，谁负责卸载。用 `skillhub` 装的技能必须用 `skillhub remove` 卸载，用 `bunx skills add` 装的技能必须用 `bunx skills remove`。
+
 ### 8. 网络问题处理
 
 **错误做法：** 一个搜索源失败就直接放弃
@@ -166,6 +206,31 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 1. 重试 1 次
 2. 再失败则用 `git clone` 找对应 GitHub 仓库
 3. 都失败则在报告中注明"下载失败，无法获取源码"
+
+### 9. 跨平台可用性验证
+
+**问题：** 用户找到候选 skill 后常问"这个 skillhub 上有吗？"或"skill.sh 上能不能装？"——需要确认 skill 在多个市场的收录情况。
+
+**正确做法：** 在阶段 2（信息收集）或阶段 4（推荐时）加入跨平台检查：
+
+1. **找到候选后立即交叉搜索** — 用候选 skill 的名称/关键词在另一个平台上搜索：
+   ```bash
+   # 如果候选来自 SkillHub → 查 skills.sh
+   bunx skills find "<keyword>" 2>&1 | grep -i "<skill-name>"
+   
+   # 如果候选来自 skills.sh → 查 SkillHub
+   skillhub search "<keyword>" 2>&1 | grep -i "<skill-name>"
+   ```
+2. **记录结果** — 在对比表中加一行"跨平台收录"。
+3. **报告影响**：
+   - 独占 skill → 告知用户只能用对应 CLI 安装
+   - 双平台 → 优先推荐安装量更高/更新更频繁的那个来源
+4. **常见情况**：BookForge、HefestoAI 等发布者选择 SkillHub 独占。Addy Osmani、Microsoft 等官方组织通常在 skills.sh 发布。
+
+**判断标准：**
+- `bunx skills find` 返回结果 → skills.sh 有收录（记录 `owner/repo@skill`）
+- `skillhub search` 返回结果 → SkillHub 有收录（记录 slug）
+- 两者都无 → 可能只存在于 GitHub 仓库，需手动安装
 
 ---
 
@@ -291,12 +356,21 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 - **陷阱**：`skillhub search` 不支持 `--dir` 参数，只有 `skillhub install` 才需要 `--dir`
 - **最佳实践**：检测当前 Agent → 默认安装到当前 Agent → 询问是否扩展到其他 Agent → 按需执行
 
+### 安装后验证
+
+安装完成后，按以下步骤验证：
+
+1. **Hermes 可见性**：`hermes skills list | grep <skill-name>` — 确认出现在列表中且状态为 enabled
+2. **OpenCode 可见性**：`ls ~/.agents/skills/<skill-name>/SKILL.md` — 确认文件存在可读（当使用 external_dirs 共享目录时）
+3. **内容一致性**：读取已安装的 SKILL.md，确认与评估时读取的源码一致
+4. **安全快照**：记录安装时的安全审计摘要，以便后续版本对比
+
 ### 命令速查
 
-| 来源 | 搜索 | 安装 | 备注 |
-|------|------|------|------|
-| Skills.sh | `bunx skills find <query>` | `bunx skills add <owner/repo@skill> -g -y` | Hermes 通过 external_dirs 自动发现 |
-| SkillHub | `skillhub search <query>` | `skillhub --dir ~/.hermes/skills/ install <slug>` | `--dir` 是全局选项，须在子命令之前 |
+| 来源 | 搜索 | 安装 | 卸载 | 备注 |
+|------|------|------|------|------|
+| Skills.sh | `bunx skills find <query>` | `bunx skills add <owner/repo@skill> -g -y` | `bunx skills remove <owner/repo@skill> -g` | 自动清理所有 agent 目录的 symlink 和状态文件 |
+| SkillHub | `skillhub search <query>` | `skillhub --dir <dir> install <slug>` | `skillhub remove <slug>` | `--dir` 是全局选项；卸载时指定 slug，自动清理 lock 和目录 |
 
 ### 临时文件清理
 
