@@ -5,10 +5,10 @@ description: Guide to managing and optimizing skills in the CNife/skills reposit
 
 # CNife Skills Repository
 
-Personal skills repository at `~/personal_code/skills/`, published to `github.com/CNife/skills`. Skills under `skills/<name>/` serve multiple agents (Hermes, OpenCode, Claude Code, etc.) via `bunx skills add`.
+Personal skills repository at `~/personal_code/skills/`, published to `github.com/CNife/skills`. Skills live at the repo root under `<name>/` and serve multiple agents (Hermes, OpenCode, Claude Code, etc.) via `bunx skills add`.
 
 ```
-skills/<skill-name>/
+<skill-name>/
 ├── SKILL.md              # Required — skill definition
 ├── scripts/              # Python scripts (PEP 723)
 └── references/           # Reference files
@@ -33,8 +33,8 @@ Run before commit:
 
 ```bash
 cd ~/personal_code/skills
-uv run ruff check --fix skills/
-uv run ruff format skills/
+uv run ruff check --fix .
+uv run ruff format .
 ```
 
 ### SKILL.md Frontmatter
@@ -54,10 +54,10 @@ Verify frontmatter across all skills:
 ```bash
 python3 -c "
 import yaml, glob
-for f in sorted(glob.glob('skills/*/SKILL.md')):
+for f in sorted(glob.glob('*/SKILL.md')):
     with open(f) as fh:
         meta = yaml.safe_load(fh.read().split('---')[1])
-    name = f.split('/')[1]
+    name = f.split('/')[0]
     errors = []
     if not meta.get('name'): errors.append('missing name')
     if not meta.get('description'): errors.append('missing description')
@@ -78,12 +78,12 @@ Configured in `.pre-commit-config.yaml`:
 
 ```bash
 # 1. Create skill directory and SKILL.md
-mkdir -p skills/<name>/scripts
+mkdir -p <name>/scripts
 # Write SKILL.md with frontmatter
 
 # 2. Quality checks
-uv run ruff check --fix skills/<name>/
-uv run ruff format skills/<name>/
+uv run ruff check --fix <name>/
+uv run ruff format <name>/
 
 # 3. Update README.md skill table
 # Add row in README.md
@@ -119,17 +119,17 @@ Spawn a sub-agent with **read-only tools only** (`toolsets=["file"]`) to scan al
 ```markdown
 ## Issues Report
 ### Missing PEP 723 header
-- skills/foo/scripts/run.py
-- skills/bar/scripts/deploy.py
+- foo/scripts/run.py
+- bar/scripts/deploy.py
 
 ### SKILL.md missing frontmatter `description`
-- skills/baz/SKILL.md
+- baz/SKILL.md
 
 ### Ruff compliance failures
-- skills/qux/scripts/analyze.py:15: unused import
+- qux/scripts/analyze.py:15: unused import
 
 ### Stale README.md (skill listed but directory missing)
-- skills/archived-skill (in README but no directory)
+- archived-skill (in README but no directory)
 ```
 
 Pass a clear context to the sub-agent listing what to check:
@@ -138,7 +138,7 @@ Pass a clear context to the sub-agent listing what to check:
 from hermes_tools import delegate_task
 
 result = delegate_task(
-    goal="Scan all skills in ~/personal_code/skills/skills/ and report issues",
+    goal="Scan all skills in ~/personal_code/skills/ and report issues",
     context="""Check each skill for:
 1. SKILL.md has valid frontmatter (name + description)
 2. Python scripts in scripts/ have PEP 723 headers
