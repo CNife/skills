@@ -22,6 +22,7 @@ bunx skills add CNife/skills@python
 || [obsidian-diary](./obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
 || [opencode-permission](./opencode-permission) | 自动化管理 OpenCode 权限规则（allow/ask/deny），支持 JSONC 注释保留，一键添加/删除/查看命令 |
 || [optimize-agents-md](./optimize-agents-md) | AGENTS.md 编写与优化指南，遵循渐进式披露原则 |
+|| [prompt-craft](./prompt-craft) | 基于 OpenAI 提示词工程最佳实践，创建和改进 pi prompt template |
 || [qwen-code-permission](./qwen-code-permission) | 自动化管理 Qwen Code 权限规则（allow/ask/deny），一键添加命令到允许列表 |
 || [reminder-review-session](./reminder-review-session) | 会话问题解决后提醒我将知识整理到 Obsidian（日记或独立文章） |
 || [skill-evaluator](./skill-evaluator) | 评估、比较、推荐、发现和安装 AI Agent 技能 |
