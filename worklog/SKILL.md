@@ -29,17 +29,17 @@ description: 从多个数据源收集用户活动轨迹 → 分析并区分工�
 
 如果用户指定的范围不同，使用用户提供的范围。
 
-## Step 1：收集活动轨迹（4 个数据源并行）
+## Step 1：收集活动轨迹（5 个数据源并行）
 
-### 数据源 1：OpenCode + Qwen Code
+### 数据源 1：OpenCode + Qwen Code + Pi Agent
 
-使用 `worklog` 技能的提取脚本：
+使用 `worklog` 技能的提取脚本，**extract.py 现已自动包含 pi agent 数据源**：
 
 ```bash
 uv run ~/personal_code/skills/worklog/scripts/extract.py --since today
 ```
 
-输出包含今日所有 OpenCode 和 Qwen Code 会话，标记了会话 ID、项目目录、用户提问序列和工具调用摘要。
+输出包含今日所有 OpenCode、Qwen Code 和 Pi Agent 会话。Pi Agent 会话标记 `(pi)` 前缀，包含工作目录、用户提问序列和工具调用摘要。
 
 ### 数据源 2：Hermes 会话
 
@@ -311,3 +311,4 @@ MAIL_EOF
 | Hermes 会话 | `session_search` 工具 |
 | Kami 字体 | `~/.hermes/skills/kami/assets/fonts/` |
 | Worklog 脚本 | `~/personal_code/skills/worklog/scripts/extract.py` |
+| Pi Agent 会话 | `~/.pi/agent/sessions/*/*.jsonl` |
