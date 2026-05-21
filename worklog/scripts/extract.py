@@ -11,6 +11,7 @@ from pathlib import Path
 
 DB_PATH = Path.home() / ".local/share/opencode/opencode.db"
 QWEN_DATA_DIR = Path.home() / ".qwen"
+PI_SESSIONS_DIR = Path.home() / ".pi" / "agent" / "sessions"
 
 
 def truncate(text: str, max_len: int) -> str:
@@ -302,6 +303,175 @@ def _format_qwen_tool_call(tc: dict) -> str:
     return f"  → {tool}: {tc.get('args', '')}"
 
 
+# ── Pi Agent 数据源 ──────────────────────────────────────────────────
+
+
+def parse_pi_session(filepath: Path, session_meta: dict, since_ts: int) -> str | None:
+    """Parse a pi agent JSONL session file into worklog-compatible output."""
+    cwd = session_meta.get("cwd", str(filepath.parent.name))
+    session_id = session_meta.get(
+        "id", filepath.stem.split("_", 1)[-1] if "_" in filepath.stem else filepath.stem
+    )
+
+    turns = []
+    current_turn = None
+    pending_tool_calls: dict[str, dict] = {}
+
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if event.get("type") != "message":
+                continue
+
+            msg = event.get("message", {})
+            role = msg.get("role", "")
+            content = msg.get("content", [])
+
+            if role == "user":
+                if current_turn:
+                    turns.append(current_turn)
+                prompt = ""
+                for part in content:
+                    if part.get("type") == "text":
+                        prompt = truncate(part.get("text", ""), 300)
+                        break
+                current_turn = {
+                    "user_prompt": prompt or "(无文本内容)",
+                    "tool_calls": [],
+                    "assistant_text": None,
+                }
+                pending_tool_calls = {}
+
+            elif role == "assistant" and current_turn is not None:
+                for part in content:
+                    ptype = part.get("type", "")
+                    if ptype == "toolCall":
+                        tc_id = part.get("id", "")
+                        tc_name = part.get("name", "unknown")
+                        tc_args = part.get("arguments", {})
+                        if tc_name == "bash":
+                            text = f"  → bash: {truncate(tc_args.get('command', ''), 150)}"
+                        elif tc_name == "write":
+                            text = f"  → write: {tc_args.get('path', '')}"
+                        elif tc_name == "read":
+                            text = f"  → read: {tc_args.get('path', '')}"
+                        elif tc_name == "edit":
+                            text = f"  → edit: {tc_args.get('path', '')}"
+                        else:
+                            text = f"  → {tc_name}: {truncate(json.dumps(tc_args, ensure_ascii=False), 100)}"
+                        entry = {"text": text, "output": None, "id": tc_id, "name": tc_name}
+                        current_turn["tool_calls"].append(entry)
+                        if tc_id:
+                            pending_tool_calls[tc_id] = entry
+                    elif ptype == "text":
+                        current_turn["assistant_text"] = truncate(part.get("text", ""), 200)
+
+            elif role == "toolResult" and current_turn is not None:
+                tc_id = msg.get("toolCallId", "")
+                tc_name = msg.get("toolName", "")
+                output_text = ""
+                for part in content:
+                    if part.get("type") == "text":
+                        output_text = truncate(part.get("text", ""), 100)
+                        break
+                if tc_id and tc_id in pending_tool_calls:
+                    pending_tool_calls[tc_id]["output"] = output_text
+                    del pending_tool_calls[tc_id]
+                elif tc_name:
+                    for call_id in list(pending_tool_calls.keys()):
+                        if pending_tool_calls[call_id]["name"] == tc_name:
+                            pending_tool_calls[call_id]["output"] = output_text
+                            del pending_tool_calls[call_id]
+                            break
+
+    if current_turn:
+        turns.append(current_turn)
+
+    if not turns:
+        return None
+
+    lines = [f"=== Session: (pi) {cwd} ({session_id})", f"Project: {cwd}", ""]
+    for turn in turns:
+        lines.append(f"[User] {turn['user_prompt']}")
+        for tc in turn["tool_calls"]:
+            line = tc["text"]
+            if tc["output"]:
+                line += f"\n    输出: {tc['output']}"
+            lines.append(line)
+        if turn.get("assistant_text"):
+            lines.append(f"  → text: {turn['assistant_text']}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def extract_pi_sessions(since_ts: int, limit: int = 50) -> list[str]:
+    """Extract pi agent sessions since given timestamp."""
+    if not PI_SESSIONS_DIR.exists():
+        return []
+
+    results: list[str] = []
+
+    # Sort project dirs by name (stable order)
+    for proj_dir in sorted(PI_SESSIONS_DIR.iterdir()):
+        if not proj_dir.is_dir():
+            continue
+        if len(results) >= limit:
+            break
+
+        session_files = sorted(proj_dir.glob("*.jsonl"), reverse=True)
+
+        for f in session_files:
+            if len(results) >= limit:
+                break
+
+            # Quick pre-filter by filename timestamp
+            name = f.name
+            ts_part = name.split("_", 1)[0] if "_" in name else ""
+            if ts_part:
+                try:
+                    ts_dt = datetime.strptime(ts_part, "%Y-%m-%dT%H-%M-%S-%fZ")
+                    if int(ts_dt.timestamp() * 1000) < since_ts:
+                        continue
+                except ValueError:
+                    pass
+
+            # Read first line for session metadata
+            try:
+                with open(f) as fh:
+                    first_line = fh.readline().strip()
+                    if not first_line:
+                        continue
+                    session_meta = json.loads(first_line)
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            if session_meta.get("type") != "session":
+                continue
+
+            ts_str = session_meta.get("timestamp", "")
+            if ts_str:
+                try:
+                    ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if int(ts_dt.timestamp() * 1000) < since_ts:
+                        continue
+                except (ValueError, OSError):
+                    pass
+
+            text = parse_pi_session(f, session_meta, since_ts)
+            if text:
+                results.append(text)
+
+    return results
+
+
 def extract_qwen_sessions(since_ts: int, limit: int = 50) -> list[str]:
     if not QWEN_TMP_DIR.exists():
         return []
@@ -394,15 +564,24 @@ def main():
 
     if not DB_PATH.exists():
         print(f"数据库不存在: {DB_PATH}")
+        results = []
         qwen_results = extract_qwen_sessions(since_ts, args.limit)
-        if not qwen_results:
+        results.extend(qwen_results)
+        pi_results = extract_pi_sessions(since_ts, args.limit)
+        results.extend(pi_results)
+        if not results:
             print("今日无会话记录。")
             return
-        print("--- Qwen Code 今日会话记录 ---")
+        sources = [
+            s
+            for s in ["Qwen Code", "Pi Agent"]
+            if (s == "Qwen Code" and qwen_results) or (s == "Pi Agent" and pi_results)
+        ]
+        print(f"--- {' + '.join(sources)} 今日会话记录 ---")
         print(f"时间范围: {since_dt.strftime('%Y-%m-%d')} 00:00 起")
-        print(f"会话数: {len(qwen_results)}")
+        print(f"会话数: {len(results)}")
         print()
-        print("\n---\n".join(qwen_results))
+        print("\n---\n".join(results))
         print("--- 记录结束 ---")
         return
 
@@ -434,12 +613,21 @@ def main():
 
     qwen_results = extract_qwen_sessions(since_ts, remaining_limit)
     results.extend(qwen_results)
+    remaining_limit -= len(qwen_results)
+
+    pi_results = extract_pi_sessions(since_ts, remaining_limit)
+    results.extend(pi_results)
 
     if not results:
         print("今日无会话记录。")
         return
 
-    source_label = "OpenCode + Qwen Code" if qwen_results else "OpenCode"
+    source_parts = ["OpenCode"]
+    if qwen_results:
+        source_parts.append("Qwen Code")
+    if pi_results:
+        source_parts.append("Pi Agent")
+    source_label = " + ".join(source_parts)
     print(f"--- {source_label} 今日会话记录 ---")
     print(f"时间范围: {since_dt.strftime('%Y-%m-%d')} 00:00 起")
     print(f"会话数: {len(results)}")
