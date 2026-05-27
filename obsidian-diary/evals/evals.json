@@ -1,0 +1,46 @@
+{
+  "skill_name": "obsidian-diary",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我刚刚把 repo CNife/pi-extensions 的几个 issue 处理完了，还合并了两个 PR。另外整理了一下项目的 README，加上了安装说明和贡献指南。这些记录一下。",
+      "expected_output": "选择 personal 变体（个人开源项目管理），使用个人日记路径",
+      "expectations": [
+        "正确选择 personal 变体而非 work",
+        "使用 个人日记 路径而非 工作日志",
+        "内容按主题域聚合（issue处理、PR合并、文档），而非按时间顺序平铺"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "今天给 OneReason 后端加了一个新的 MCP 工具，部署到测试环境验证通过了。MR 已经创建，指派给老吴 review。更新下工作日志。",
+      "expected_output": "选择 work 变体（公司项目），使用工作日志路径",
+      "expectations": [
+        "正确选择 work 变体",
+        "使用 工作日志/YYYY/MM/ 路径格式（数字目录，不含中文）",
+        "按子系统粒度组织（# OneReason Backend），而非按任务粒度"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "差不多了，今天先到这里吧",
+      "expected_output": "主动询问是否需要记录日记，而不是直接写入",
+      "expectations": [
+        "AI 主动询问用户是否需要记录（如\"要我把今天的记录到日记吗？\"）",
+        "不直接执行写入操作",
+        "询问中包含变体选择（工作/个人）"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "今天写了段小说，帮我把今天的写到个人日记里。注意涉及成人内容的部分要写得隐晦一些。",
+      "expected_output": "R18 内容使用隐晦表达，不直白描写",
+      "expectations": [
+        "选择 personal 变体",
+        "涉及成人/R18内容时使用隐喻或省略写法",
+        "不出现直白的成人内容描写",
+        "使用 个人日记/YYYY/MM/ 路径格式"
+      ]
+    }
+  ]
+}
