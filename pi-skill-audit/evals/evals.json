@@ -1,0 +1,40 @@
+{
+  "skill_name": "pi-skill-audit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "看看我的 pi agent 技能使用情况",
+      "expected_output": "Run the audit script, produce a categorized report (high/medium/low/unused), and summarize findings for the user.",
+      "files": [],
+      "expectations": [
+        "The skill runs scripts/audit.py via uv run",
+        "The output includes at least 3 categories (high/medium/low/unused)",
+        "The output lists specific skill names with their usage counts",
+        "The output provides a summary of used vs unused skills"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "整理技能，看看哪些可以删掉",
+      "expected_output": "Identify unused skills from the audit, read their SKILL.md descriptions, suggest which to remove with rationale.",
+      "files": [],
+      "expectations": [
+        "The skill runs the audit script to identify unused skills",
+        "The skill reads SKILL.md of at least 2 unused skills to explain their purpose",
+        "The skill provides removal commands (bunx skills remove)",
+        "The skill asks for user confirmation before suggesting removal"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "看下 kami 和 write 这两个技能用的多不多",
+      "expected_output": "Look up usage counts for specific skills (kami, write) from the audit data and report whether they are used or unused.",
+      "expectations": [
+        "The skill runs the audit script",
+        "The skill specifically mentions the requested skills (kami, write)",
+        "The skill explains what each skill does (reads their SKILL.md)",
+        "The skill gives a recommendation (keep or remove) for each"
+      ]
+    }
+  ]
+}
