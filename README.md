@@ -25,6 +25,7 @@ bunx skills add CNife/skills@python
 || [optimize-agents-md](./optimize-agents-md) | AGENTS.md 编写与优化指南，遵循渐进式披露原则 |
 || [prompt-craft](./prompt-craft) | 基于 OpenAI 提示词工程最佳实践，创建和改进 pi prompt template |
 || [qwen-code-permission](./qwen-code-permission) | 自动化管理 Qwen Code 权限规则（allow/ask/deny），一键添加命令到允许列表 |
+|| [search-router](./search-router) | 基于 opencli 的智能搜索路由器，根据话题路由到最佳搜索源，带搜索理由软约束 |
 || [reminder-review-session](./reminder-review-session) | 会话问题解决后提醒我将知识整理到 Obsidian（日记或独立文章） |
 || [skill-evaluator](./skill-evaluator) | 评估、比较、推荐、发现和安装 AI Agent 技能 |
 | [worklog](./worklog) | 多数据源收集活动轨迹 → 分析工作与个人 → Kami 排版 PDF → 邮件投递 |
