@@ -16,6 +16,7 @@ bunx skills add CNife/skills@python
 
 | Skill | 描述 |
 |-------|------|
+| [ast-grep](./ast-grep) | AST 结构搜索与代码重写 — 基于 ast-grep 的 25 语言结构化代码搜索和跨文件重构 |
 | [audit-hermes-agent-skills](./audit-hermes-agent-skills) | 审计 Hermes Agent 技能使用频率，生成带中文描述和下拉决策的 XLSX，支持清理执行 |
 | [models-dev-query](./models-dev-query) | 查询 models.dev 数据库 — 模型规格、定价、上下文限制、提供商 API 端点、能力标记 |
 | [cnife-skills-repo](./cnife-skills-repo) | 本仓库结构说明、Python 项目规范、PEP 723 单脚本模式和 pre-commit 钩子配置 |
