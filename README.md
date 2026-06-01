@@ -34,66 +34,10 @@ bunx skills add CNife/skills@python
 
 ## 开发
 
-### 目录结构
-
-每个技能独立一个目录，放在仓库根目录下：
-
-```text
-<skill-name>/
-├── SKILL.md              # Required — 技能定义
-├── scripts/              # Python 脚本（PEP 723）
-└── references/           # 参考文件
-```
-
-### 依赖
-
-- **Python 工具** — 使用 [uv](https://docs.astral.sh/uv/) 管理，无需手动安装
-- **pre-commit** — 代码提交前自动检查
-
-### 质量门禁
-
-提交前运行所有检查：
-
 ```bash
-# 安装 pre-commit 钩子（首次）
-uv run pre-commit install
-
-# 手动运行全部检查
-uv run pre-commit run --all-files
-```
-
-已配置的 hooks：
-
-- **pre-commit-hooks** — 基础格式检查（YAML/TOML/JSON 校验、尾随空格、EOF 空行等）
-- **uv-pre-commit** — `uv lock` 锁定依赖
-- **ruff-pre-commit** — Python 代码检查（`ruff check --fix`）+ 格式化（`ruff format`）
-- **rumdl** — Markdown 格式化（lint + 自动修复），配置见 `.rumdl.toml`
-
-### 新建技能
-
-```bash
-# 1. 创建技能目录和 SKILL.md
-mkdir -p <name>/scripts
-
-# 2. 运行检查
-uv run ruff check --fix <name>/
-uv run ruff format <name>/
-
-# 3. 更新 README.md 中的技能表格
-# 在可用 Skills 表格中新增一行
-
-# 4. 提交并推送
-git add -A
-git commit -m "<name>: <简要描述>"
-git push
-```
-
-### GitHub 发布
-
-安装到全局：
-
-```bash
-bunx skills add CNife/skills@<name> -g -y
+git clone https://github.com/CNife/skills.git && cd skills
+uv run pre-commit install   # 安装 git hooks
+uv run pre-commit run --all-files   # 运行全部检查
 ```
 
 ## License
