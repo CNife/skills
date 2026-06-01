@@ -31,7 +31,7 @@ Pi agent 的技能是逐步累积的。新的实验性技能装上去后可能�
 
 ## 工作流
 
-```
+```text
 统计调用 → 交叉分析 → 报告展示 → 用户决策 → 删除 → 验证
 ```
 
@@ -84,6 +84,7 @@ bunx skills remove tavily-cli tavily-crawl tavily-search -g -y
 ```
 
 参数：
+
 - `-g` — 全局安装（`~/.agents/skills/`）
 - `-y` — 跳过交互确认
 
@@ -133,5 +134,6 @@ uv run --script scripts/audit.py --sessions /custom/sessions/dir --skills /custo
 ```
 
 如果脚本输出为空，检查：
+
 1. `~/.pi/agent/sessions/` 是否存在且有 `.jsonl` 文件
 2. `~/.agents/skills/` 是否存在且有技能目录

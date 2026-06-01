@@ -31,7 +31,7 @@ description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当
 
 在添加规则前，先判断作用域：
 
-```
+```text
 这条规则 → 全局生效？ → 是 → 根 AGENTS.md
          → 特定模块？ → 是 → 子目录 AGENTS.md 或 Skill
          → 复杂工作流？ → 是 → Skill
@@ -65,6 +65,7 @@ description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当
 | 3. References | 详细文档 | 需要时才读取 |
 
 **好处**：
+
 - 节省 context window
 - Agent 只看到相关规则
 - 规则更易维护
@@ -85,7 +86,7 @@ description: AGENTS.md 编写与优化指南，遵循渐进式披露原则。当
 
 ### 层级结构
 
-```
+```text
 ~/.config/opencode/AGENTS.md   # 用户全局（所有项目共享）
     ↓ 继承/覆盖
 project/AGENTS.md              # 项目根目录（项目级规则）
@@ -115,23 +116,29 @@ project/src/python/AGENTS.md   # 模块级（特定模块规则）
 
 ```markdown
 # ❌ 错误：项目 AGENTS.md 重复用户全局规则
-# 语言
-始终用中文回答。          # 已在 ~/.config/opencode/AGENTS.md 定义，重复！
 
-# Git
+## 语言
+
+始终用中文回答。 # 已在 ~/.config/opencode/AGENTS.md 定义，重复！
+
+## Git
+
 简短提交信息，不加前缀    # 已在 ~/.config/opencode/AGENTS.md 定义，重复！
 
-# ✅ 正确：项目 AGENTS.md 只包含项目特定规则
-# 项目结构
+## ✅ 正确：项目 AGENTS.md 只包含项目特定规则
+
+## 项目结构
+
 src/ 为源码目录，tests/ 为测试目录。
 
-# 团队约定
+## 团队约定
+
 PR 必须经过至少一人审核。
 ```
 
 ### 文件放置示例
 
-```
+```text
 ~/.config/opencode/
 └── AGENTS.md                # 用户全局规则（所有项目共享）
 
@@ -185,7 +192,7 @@ project/
 
 ### 2. 决策树
 
-```
+```text
 这条规则是否每次会话都需要？
 ├── 是 → 是所有项目都需要的吗？
 │   ├── 是 → 建议放到 ~/.config/opencode/AGENTS.md（用户全局；agent 只提供草稿，用户手动应用）
@@ -203,7 +210,7 @@ project/
 
 ### 1. 创建新的 AGENTS.md
 
-```
+```text
 1. 确认需要哪些全局规则（语言、原则、Git）
 2. 判断是否有模块级规则需要单独放置
 3. 编写精简的根 AGENTS.md
@@ -212,7 +219,7 @@ project/
 
 ### 2. 分析现有内容
 
-```
+```text
 1. 读取现有 AGENTS.md
 2. 列出所有规则模块
 3. 标记每个模块的作用域（全局/模块/项目文档/任务）
@@ -229,7 +236,7 @@ project/
 
 ### 4. 执行拆分
 
-```
+```text
 1. 创建子目录 AGENTS.md、docs/AGENTS.md 或 Skill 文件
 2. 迁移相关规则（保持格式和层级）
 3. 更新根 AGENTS.md，移除已拆分内容
@@ -238,7 +245,7 @@ project/
 
 ### 5. 验证
 
-```
+```text
 1. 检查根 AGENTS.md 是否精简
 2. 确认子目录文件内容完整
 3. 验证没有规则丢失或重复
@@ -262,20 +269,25 @@ project/
 
 ```markdown
 # 语言
+
 始终用中文回答。
 
-# 核心原则
+## 核心原则
+
 - 优先简单、可维护的方案
 - 不要过度设计
 
-# Git
+## Git
+
 - 简短提交信息，不加前缀
 
-# 模块规则
+## 模块规则
+
 Python 项目 → 参考 src/python/AGENTS.md
 前端项目 → 参考 src/frontend/AGENTS.md
 
-# 文档
+## 文档
+
 项目架构 → 参考 docs/AGENTS.md
 ```
 
@@ -285,9 +297,11 @@ Python 项目 → 参考 src/python/AGENTS.md
 # Python 项目规范
 
 ## 工具
+
 依赖管理用 uv，格式化用 ruff。
 
 ## 原则
+
 - Fast-fail：外层才用 try-except
 - 禁止硬编码凭证
 ```
@@ -298,9 +312,11 @@ Python 项目 → 参考 src/python/AGENTS.md
 # 项目文档规范
 
 ## 架构说明
+
 本项目采用三层架构，详见 architecture.md。
 
 ## API 文档
+
 - REST API 规范 → api-guide.md
 - GraphQL Schema → schema.graphql
 ```

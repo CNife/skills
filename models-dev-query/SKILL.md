@@ -25,11 +25,13 @@ Query [models.dev](https://github.com/anomalyco/models.dev) — a comprehensive 
 ## Quick Reference Commands
 
 ### List all providers
+
 ```bash
 curl -sL https://models.dev/api.json | jq -r 'keys | .[]' | sort
 ```
 
 ### List models for a provider
+
 ```bash
 # From api.json (fast)
 curl -sL https://models.dev/api.json | jq -r '.["<provider-id>"].models | keys | .[]'
@@ -40,17 +42,20 @@ gh api repos/anomalyco/models.dev/contents/providers/<provider-id>/models \
 ```
 
 ### Get model specs (fast — api.json)
+
 ```bash
 curl -sL https://models.dev/api.json | jq '.["<provider-id>"].models["<model-id>"]'
 ```
 
 ### Get model specs (detailed — GitHub TOML)
+
 ```bash
 gh api repos/anomalyco/models.dev/contents/providers/<provider-id>/models/<model-id>.toml \
   --jq '.download_url' | xargs curl -sL
 ```
 
 ### Get provider info
+
 ```bash
 curl -sL https://models.dev/api.json | jq '.["<provider-id>"] | {name: .name, api: .api, doc: .doc, env: .env}'
 ```
@@ -87,7 +92,8 @@ gh api repos/anomalyco/models.dev/contents/providers/<provider-id>/models/<model
 ```
 
 If the model ID contains `/` (e.g. `nvidia/llama-3.1`), the TOML file is in a subdirectory:
-```
+
+```text
 providers/<provider-id>/models/<slash-prefix>/<rest-of-id>.toml
 ```
 
@@ -101,6 +107,7 @@ gh api repos/anomalyco/models.dev/contents/providers/<provider-id>/provider.toml
 ```
 
 Key fields:
+
 - `api` — OpenAI-compatible base URL
 - `npm` — AI SDK package name (`@ai-sdk/openai-compatible` for generic OpenAI-compatible)
 - `env[]` — environment variable names for auth

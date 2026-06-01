@@ -7,7 +7,7 @@ description: Guide to managing and optimizing skills in the CNife/skills reposit
 
 Personal skills repository at `~/personal_code/skills/`, published to `github.com/CNife/skills`. Skills live at the repo root under `<name>/` and serve multiple agents (Hermes, OpenCode, Claude Code, etc.) via `bunx skills add`.
 
-```
+```text
 <skill-name>/
 ├── SKILL.md              # Required — skill definition
 ├── scripts/              # Python scripts (PEP 723)
@@ -69,6 +69,7 @@ for f in sorted(glob.glob('*/SKILL.md')):
 ### Pre-commit Hooks
 
 Configured in `.pre-commit-config.yaml`:
+
 - pre-commit-hooks (format/validate)
 - uv-pre-commit (`uv lock`)
 - ruff-pre-commit (check + format)
@@ -103,7 +104,7 @@ Use `delegate_task` to run a closed-loop audit-fix-verify cycle when bulk-mainta
 
 ### Workflow
 
-```
+```text
 Phase 1: Sub-agent scans + reports issues
          ↓
 Phase 2: Main agent fixes each issue
@@ -118,17 +119,22 @@ Spawn a sub-agent with **read-only tools only** (`toolsets=["file"]`) to scan al
 
 ```markdown
 ## Issues Report
+
 ### Missing PEP 723 header
+
 - foo/scripts/run.py
 - bar/scripts/deploy.py
 
 ### SKILL.md missing frontmatter `description`
+
 - baz/SKILL.md
 
 ### Ruff compliance failures
+
 - qux/scripts/analyze.py:15: unused import
 
 ### Stale README.md (skill listed but directory missing)
+
 - archived-skill (in README but no directory)
 ```
 

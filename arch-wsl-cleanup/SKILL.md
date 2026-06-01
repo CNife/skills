@@ -23,6 +23,7 @@ installed packages, then scan for large files and directories.
 4. Identify available package managers: `which pacman yay paru 2>/dev/null`
 
 **Record baseline** for the final report — save the output of `df -h /` and:
+
 ```bash
 du -sh /var/cache/pacman/pkg/ ~/.cache/ 2>/dev/null
 ```
@@ -183,18 +184,21 @@ shrink automatically. The user must perform these steps **manually** outside WSL
 Walk the user through:
 
 1. **TRIM the filesystem** (run inside WSL):
+
    ```bash
    sudo fstrim -v /
    ```
 
 2. **Shut down WSL** (run in Windows PowerShell):
+
    ```powershell
    wsl --shutdown
    ```
 
 3. **Compact the VHDX** — choose one method (run in Windows PowerShell as Administrator):
 
-   **Option A: diskpart**
+## Option A: diskpart
+
    ```powershell
    diskpart
    # In diskpart:
@@ -203,7 +207,8 @@ Walk the user through:
    exit
    ```
 
-   **Option B: Hyper-V PowerShell cmdlet**
+## Option B: Hyper-V PowerShell cmdlet
+
    ```powershell
    Optimize-VHD -Path "C:\Users\<username>\AppData\Local\Packages\...\LocalState\ext4.vhdx" -Mode Full
    ```

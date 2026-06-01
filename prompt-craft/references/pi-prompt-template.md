@@ -1,6 +1,6 @@
 # Pi Prompt Template 格式参考
 
-来源：https://pi.dev/docs/latest/prompt-templates
+来源：<https://pi.dev/docs/latest/prompt-templates>
 
 ## 概述
 
@@ -22,6 +22,7 @@ Prompt template 是 Markdown 片段，可展开为完整提示词。在 pi 编�
 description: 简短描述模板用途
 argument-hint: "[可选参数提示]"
 ---
+
 提示词正文内容。
 ```
 
@@ -35,6 +36,7 @@ argument-hint: "[可选参数提示]"
 - `[方括号]` 表示可选参数
 
 示例：
+
 ```markdown
 ---
 description: 从 URL 审查 PR，含结构化 issue 和代码分析
@@ -43,7 +45,8 @@ argument-hint: "<PR-URL>"
 ```
 
 补全下拉显示效果：
-```
+
+```text
 → pr   <PR-URL>     — 从 URL 审查 PR，含结构化 issue 和代码分析
 ```
 
@@ -59,10 +62,12 @@ argument-hint: "<PR-URL>"
 | `${@:N:L}` | 从第 N 个起的 L 个参数 |
 
 示例：
+
 ```markdown
 ---
 description: 创建组件
 ---
+
 创建名为 $1 的 React 组件，功能：$@
 ```
 

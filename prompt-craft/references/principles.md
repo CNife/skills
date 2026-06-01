@@ -1,6 +1,6 @@
 # OpenAI 提示词工程最佳实践
 
-来源：https://help.openai.com/zh-hans-cn/articles/6654000
+来源：<https://help.openai.com/zh-hans-cn/articles/6654000>
 
 ## 原则 1：使用最新的模型
 

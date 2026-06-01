@@ -51,7 +51,8 @@ uv run --script scripts/pi_trending.py
 ```
 
 展示内容（Markdown 表格）：
-```
+
+```text
 | # | 包名 | 类型 | 作者 | 周下载 | 趋势分 |
 |---|------|------|------|--------|--------|
 | 1 | @pi/core | extension | user | 12,345 | 89,234 |
@@ -112,6 +113,7 @@ npm view <包名>
 ```
 
 包名含 `@scope/` 前缀时同样适用，例如：
+
 ```bash
 npm view @pi/core description
 npm view @pi/core readme
@@ -138,8 +140,7 @@ npm view @pi/core readme
 | <1,000  | 📊 平稳或波动较小 |
 
 ⚠️ **注意事项**：
+
 - 新包首次进入榜单时趋势分可能偏低（缺少历史数据）
 - 成熟稳定的大包（如核心框架）趋势分可能不高，但周下载量依然巨大
 - 建议结合 **趋势分** 和 **周下载** 两个指标一起评估
-
-

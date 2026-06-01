@@ -22,6 +22,7 @@ Manage `permission` rules in `~/.config/opencode/opencode.jsonc`. Add, remove, l
 1. Identify the rule string(s) and action from the user's request (e.g., `"kubectl get *"` → `allow`)
 2. Determine the subcommand: `add` / `remove` / `list` / `list-all` / `format`
 3. Run the bundled script:
+
    ```bash
    # 单条添加
    uv run --script <skill-path>/scripts/manage_permission.py add "kubectl get *" --action allow
@@ -29,6 +30,7 @@ Manage `permission` rules in `~/.config/opencode/opencode.jsonc`. Add, remove, l
    # 批量添加
    uv run --script <skill-path>/scripts/manage_permission.py add "kubectl get *" "kubectl describe *" "kubectl logs *"
    ```
+
 4. Confirm the change was written
 5. Remind the user: **修改配置后需要重启 OpenCode 才能生效**
 
@@ -132,6 +134,7 @@ Simple keys (no pattern matching) accept only `"allow"`, `"ask"`, or `"deny"` as
 - **Location**: `~/.config/opencode/opencode.jsonc` (global) or `<project>/.opencode/opencode.jsonc` (project-level)
 - **Format**: JSONC (JSON with Comments) — supports `//` and `/* */` comments
 - **Structure**:
+
   ```jsonc
   {
     "permission": {
@@ -144,6 +147,7 @@ Simple keys (no pattern matching) accept only `"allow"`, `"ask"`, or `"deny"` as
     }
   }
   ```
+
 - **Agent-level override**: Rules can also be set per-agent in the `agent` section, which take precedence over global rules
 
 ## Examples

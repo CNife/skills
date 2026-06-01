@@ -52,6 +52,7 @@ uv run ~/.hermes/skills/audit-hermes-agent-skills/scripts/audit.py --apply
 ```
 
 先打印变更摘要（删除/禁用/启用各多少），用户确认 y 后自动执行：
+
 - 备份 `config.yaml`
 - 备份要删除的技能目录到 `~/.hermes/skills/.audit-backups/` 并删除
 - 更新 `config.yaml` 的 `skills.disabled` 列表（合并新增和移除）
@@ -68,7 +69,7 @@ uv run ~/.hermes/skills/audit-hermes-agent-skills/scripts/audit.py --apply
 | **Hermes Curator**（`hermes curator status` + `run.json`） | **交叉验证来源分类**，补充 Curator 活跃度指标（activity/use/view/patches）和 consolidation/archive 关系 | 权威覆盖（高于 API） |
 | 文件系统扫描 + `state.db` tool_calls 解析 | 定位物理目录路径、统计调用频次 | 基础覆盖 |
 
-**Hermes Curator 集成点：**
+## Hermes Curator 集成点：
 
 - **来源分类权责**：如果 Curator 认定某技能为 `agent-created`，覆盖 API 返回的 `local` 分类（agent-created 是 local 的真子集）
 - **Consolidation 感知**：从 Curator 的 `run.json` 读取技能合并关系（如 `dida365-openapi → platform-integration`），告知用户该技能已被 umbrella 替代

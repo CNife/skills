@@ -85,6 +85,7 @@ uv run --script scripts/obsidian-helper.py --vault <work|personal> --action <act
 ```
 
 可用 action：
+
 - `context` — 一次调用返回所有上下文（路径 + 规则 + 待办 + 近期摘要 + 今日日记大纲）
 - `locate` — 获取今日日记路径、模板路径、存在状态
 - `create` — 确保今日日记存在，不存在则从模板创建
@@ -106,11 +107,12 @@ uv run --script scripts/obsidian-helper.py --vault <work|personal> --action <act
 3. 用户已完成主要任务，处于收尾阶段
 
 询问格式：
+
 - 能判断内容性质时：「要我把这次（工作/学习）记录到（工作/个人）日记吗？」
 - 没有上下文无法判断时：「今天的内容需要记到日记吗？是工作相关的还是个人的？」
 
 > 为什么是询问而不是直接写？用户对日记内容有掌控欲——什么语气、记什么、不记什么，只有用户自己知道。主动询问是"推一把"和"不越权"的平衡。
-
+>
 > 如果没有会话上下文（例如在空会话或新对话中被调用），先问用户今天做了什么，再提议记录。
 
 ## 工作流
@@ -122,6 +124,7 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 ```
 
 输出包含五个段落，一次拿齐：
+
 - **路径信息**：DIARY_PATH、DIARY_EXISTS、DATE
 - **RULES**：对应变体的格式规则（自动从 references 文件读取）
 - **TODOS**：近期未完成待办（14 天）
@@ -148,12 +151,13 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 | CouchDB 架构评估 / 阿里云部署 / 踩坑记录 / 客户端配置 | **Obsidian 同步方案部署** | 都属于"LiveSync + CouchDB 落地" |
 | Git 备份 / Hermes SMB 备份 / cron 一览 | **基础设施配置** | 都属于"备份和自动化" |
 
-**合并规则：**
+## 合并规则：
+
 - 同一主题域的多个事件合并为 1 个 `# 标题`，其下用子 bullet 展开
 - 每个子 bullet 1-2 行，只写结论和关键数据，不要展开细节
 - 明显不同域的事件不能硬塞在一起（daisy 技能本身是金融研究的一部分，但 CouchDB 部署就不是）
 
-#### 2c. 检查今日日记大纲（来自步骤 1 的 `## 大纲`）
+### 2c. 检查今日日记大纲（来自步骤 1 的 `## 大纲`）
 
 **新内容能塞进已有章节的，不新开一段。** 例如今天继续做投资分析，而日记里已经有 `# 金融研究` 段落，就在那个段落追加新 bullet，不要另起 `# 金融研究（续）`。
 
@@ -188,7 +192,8 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 3. 新章节 → 在日记末尾（待办块之后、其他已有章节之前或之后，按排序决定）插入 `# 标题` + 内容
 
 示例：
-```
+
+```text
 # context 输出显示：
 ## 大纲
 6: # Genos Reg Server
@@ -201,12 +206,14 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 ```
 
 **更新已有段落**（补充、修正、状态变更）：
+
 - 只修改与本次会话相关的段落
 - 不修改无关内容
 - 合并重复而非追加——如果今天已经记过"daisy 技能安装"，补充结果时修改那条，不另起一行
 
 **更新历史待办**：将对应文件中的 `- [ ]` 改为 `- [x]`，添加 `✅ YYYY-MM-DD`，同时在今日日记添加 Obsidian 链接：
-```
+
+```text
 - [x] 任务描述 ✅ 2026-04-19  完成于 [[2026年4月15日星期三##任务标题]]
 ```
 
@@ -215,12 +222,14 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 #### 3c. 新增待办
 
 本次会话产生的新待办，添加到今日日记末尾：
+
 - 格式：`- [ ] 描述`
 - 有计划日期时添加 `📅 YYYY-MM-DD`
 
 ### 步骤 4：确认
 
 输出本次写入/更新的内容摘要：
+
 - 新增的日记条目（按主题分组展示）
 - 更新的待办（状态变化 + 链接）
 - 新增的待办
@@ -252,6 +261,7 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 | `[-]` | 已取消 | 不再需要的任务，末尾加 `❌ YYYY-MM-DD` |
 
 可选状态（按需使用）：
+
 - `[/]` 进行中 — 已开始但未完成
 - `[>]` 延期 — 推迟到以后
 - `[!]` 重要 — 高优先级

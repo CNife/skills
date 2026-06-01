@@ -14,9 +14,11 @@ Manage Qwen Code's `permissions.allow` / `permissions.ask` / `permissions.deny` 
 1. Identify the rule string from user request (e.g., `"Bash(. ~/.x-cmd.root/X)"`)
 2. Determine the action: `allow` (default) / `ask` / `deny`
 3. Run the bundled script (find it at `scripts/add_permission.py` relative to this skill):
+
    ```bash
    uv run --script <skill-path>/scripts/add_permission.py "Bash(. ~/.x-cmd.root/X)" --action allow
    ```
+
 4. Confirm the change was written
 5. Remind user: **配置更改需要重启 Qwen Code（`/exit` 后重新运行）才能生效**
 
@@ -61,7 +63,7 @@ Manage Qwen Code's `permissions.allow` / `permissions.ask` / `permissions.deny` 
 | Rule | Meaning |
 |------|---------|
 | `"Bash"` | All shell commands |
-| `"Bash(git *)"` | Commands starting with `git ` (word boundary) |
+| `"Bash(git *)"` | Commands starting with `git` (word boundary) |
 | `"Bash(npm run *)"` | Any `npm run` script |
 | `"WebFetch(api.example.com)"` | That domain and all subdomains |
 | `"mcp__puppeteer"` | All tools from the puppeteer MCP server |
