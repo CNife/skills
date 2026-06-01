@@ -17,11 +17,11 @@ import argparse
 import json
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -58,6 +58,7 @@ def _warn(msg: str) -> None:
 
 # ── Data models ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class PiPackage:
     name: str
@@ -71,6 +72,7 @@ class PiPackage:
 
 
 # ── Network helpers ──────────────────────────────────────────────────────────
+
 
 def _urlencode_pkg(name: str) -> str:
     """URL-encode a package name for npm API (handles scoped packages)."""
@@ -110,6 +112,7 @@ def _json_get_bulk(urls: list[str], max_workers: int = 8) -> list[dict[str, Any]
 
 # ── Determine package type ────────────────────────────────────────────────────
 
+
 def _determine_type(keywords: list[str] | None) -> str:
     """Determine pi package type from npm keywords."""
     if not keywords:
@@ -135,6 +138,7 @@ def _get_author(pkg: dict) -> str:
 
 # ── Fetch phase 1: search API ────────────────────────────────────────────────
 
+
 def fetch_top_packages(need: int) -> list[PiPackage]:
     """Fetch top N pi packages by weekly downloads.
 
@@ -149,7 +153,7 @@ def fetch_top_packages(need: int) -> list[PiPackage]:
         url = f"{NPM_SEARCH}?text=keywords:pi-package&size={SEARCH_PAGE_SIZE}&from={offset}"
         data = _json_get(url)
         if data is None:
-            _warn(f"搜索 API 第 {page+1} 页请求失败，终止")
+            _warn(f"搜索 API 第 {page + 1} 页请求失败，终止")
             break
 
         objects = data.get("objects", [])
@@ -176,7 +180,9 @@ def fetch_top_packages(need: int) -> list[PiPackage]:
         all_pkgs.sort(key=lambda p: p.weekly, reverse=True)
         current_top_n = all_pkgs[:need]
 
-        _vlog(f"  第 {page+1} 页: {len(objects)} 个包 (累计 {len(all_pkgs)}，top {need} 最低周下载 {current_top_n[-1].weekly:,})")
+        _vlog(
+            f"  第 {page + 1} 页: {len(objects)} 个包 (累计 {len(all_pkgs)}，top {need} 最低周下载 {current_top_n[-1].weekly:,})"
+        )
 
         # Stop condition: we have enough candidates AND
         # the highest weekly on this new page is lower than
@@ -185,7 +191,9 @@ def fetch_top_packages(need: int) -> list[PiPackage]:
             page_max_weekly = max(obj.get("downloads", {}).get("weekly", 0) for obj in objects)
             need_th_weekly = current_top_n[-1].weekly
             if page_max_weekly < need_th_weekly:
-                _vlog(f"  ✓ top {need} 候选包已确定 (第 {page+2} 页最高周下载 {page_max_weekly} < 候选门槛 {need_th_weekly})")
+                _vlog(
+                    f"  ✓ top {need} 候选包已确定 (第 {page + 2} 页最高周下载 {page_max_weekly} < 候选门槛 {need_th_weekly})"
+                )
                 break
 
         # Safety: limit pages even if convergence hasn't happened
@@ -199,8 +207,9 @@ def fetch_top_packages(need: int) -> list[PiPackage]:
 
 # ── Fetch phase 2: download range data ───────────────────────────────────────
 
+
 def _today_str() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
@@ -209,7 +218,7 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
         return packages
 
     today = _today_str()
-    fourteen_days_ago = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
+    fourteen_days_ago = (datetime.now(UTC) - timedelta(days=14)).strftime("%Y-%m-%d")
     range_url = f"{NPM_DOWNLOADS}/range/{fourteen_days_ago}:{today}"
 
     _vlog(f"获取 {len(packages)} 个候选包的下载趋势数据...")
@@ -223,7 +232,7 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
 
     # Batch unscoped (max 100 per batch for URL length safety)
     batch_size = 80
-    unscoped_batches = [unscoped[i:i + batch_size] for i in range(0, len(unscoped), batch_size)]
+    unscoped_batches = [unscoped[i : i + batch_size] for i in range(0, len(unscoped), batch_size)]
 
     for _batch_idx, batch in enumerate(unscoped_batches):
         names_comma = ",".join(p.name for _, p in batch)
@@ -242,7 +251,7 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
         scoped_urls.append(f"{range_url}/{_urlencode_pkg(p.name)}")
 
     scoped_responses = _json_get_bulk(scoped_urls, max_workers=5)
-    for (idx, p), resp in zip(scoped, scoped_responses):
+    for (idx, _p), resp in zip(scoped, scoped_responses, strict=True):
         if resp and isinstance(resp, dict) and "error" not in resp and "downloads" in resp:
             results[idx] = resp
 
@@ -269,12 +278,17 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
 
         pkg.this_week = this_week
         pkg.prev_week = prev_week
-        pkg.score = (this_week ** 2) / (prev_week + TRENDING_SMOOTHING) if (prev_week + TRENDING_SMOOTHING) > 0 else 0.0
+        pkg.score = (
+            (this_week**2) / (prev_week + TRENDING_SMOOTHING)
+            if (prev_week + TRENDING_SMOOTHING) > 0
+            else 0.0
+        )
 
     return packages
 
 
 # ── Output ────────────────────────────────────────────────────────────────────
+
 
 def render_markdown(packages: list[PiPackage]) -> None:
     """Render trending packages as a Markdown table (LLM-friendly)."""
@@ -297,20 +311,23 @@ def render_json(packages: list[PiPackage]) -> None:
     """Render trending packages as JSON."""
     output = []
     for pkg in packages:
-        output.append({
-            "name": pkg.name,
-            "type": pkg.pkg_type,
-            "author": pkg.author,
-            "weekly_downloads": pkg.weekly,
-            "trending_score": round(pkg.score, 1),
-            "this_week": pkg.this_week,
-            "prev_week": pkg.prev_week,
-            "description": pkg.description,
-        })
+        output.append(
+            {
+                "name": pkg.name,
+                "type": pkg.pkg_type,
+                "author": pkg.author,
+                "weekly_downloads": pkg.weekly,
+                "trending_score": round(pkg.score, 1),
+                "this_week": pkg.this_week,
+                "prev_week": pkg.prev_week,
+                "description": pkg.description,
+            }
+        )
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -325,22 +342,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
   pi-trending.py --json                   # JSON 格式输出
         """,
     )
+    parser.add_argument("--max", type=int, default=20, help="显示前 N 个结果 (默认 20)")
     parser.add_argument(
-        "--max", type=int, default=20,
-        help="显示前 N 个结果 (默认 20)",
-    )
-    parser.add_argument(
-        "--type", dest="pkg_type", default="all",
+        "--type",
+        dest="pkg_type",
+        default="all",
         choices=["all", "extension", "skill", "theme", "prompt"],
         help="按包类型过滤: extension, skill, theme, prompt (默认 all)",
     )
+    parser.add_argument("--json", action="store_true", help="以 JSON 格式输出 (替代 Markdown 表格)")
     parser.add_argument(
-        "--json", action="store_true",
-        help="以 JSON 格式输出 (替代 Markdown 表格)",
-    )
-    parser.add_argument(
-        "--verbose", action="store_true",
-        help="显示详细的 API 调用和流程日志 (默认不显示)",
+        "--verbose", action="store_true", help="显示详细的 API 调用和流程日志 (默认不显示)"
     )
     return parser.parse_args(argv)
 
@@ -350,7 +362,7 @@ def main() -> None:
     global VERBOSE
     VERBOSE = args.verbose
 
-    # ── Phase 1: fetch top candidates (3× max for trending computation) ──
+    # ── Phase 1: fetch top candidates (3x max for trending computation) ──
     max_candidates = args.max * 3
     candidates = fetch_top_packages(max_candidates)
     if not candidates:
@@ -369,7 +381,11 @@ def main() -> None:
 
     # ── Phase 5: output ──
     if not results:
-        msg = f"未找到类型为 '{args.pkg_type}' 的 trending 包" if args.pkg_type != "all" else "未找到 trending 包"
+        msg = (
+            f"未找到类型为 '{args.pkg_type}' 的 trending 包"
+            if args.pkg_type != "all"
+            else "未找到 trending 包"
+        )
         _warn(msg)
         sys.exit(0)
 

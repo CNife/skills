@@ -214,7 +214,7 @@ def cmd_list(args):
     print(f"配置文件: {args.config}")
     print(f"{'规则':<45} {'动作':<10}")
     print("-" * 57)
-    for key, val in zip(bash_obj.keys, bash_obj.values):
+    for key, val in zip(bash_obj.keys, bash_obj.values, strict=True):
         rule = key.characters if isinstance(key, DoubleQuotedString) else str(key)
         action = val.characters if isinstance(val, DoubleQuotedString) else str(val)
         print(f"{rule:<45} {action:<10}")
@@ -244,13 +244,13 @@ def cmd_list_all(args):
         return
 
     print(f"配置文件: {args.config}")
-    for key, val in zip(perm_obj.keys, perm_obj.values):
+    for key, val in zip(perm_obj.keys, perm_obj.values, strict=True):
         tool_name = key.characters if isinstance(key, DoubleQuotedString) else str(key)
         if isinstance(val, DoubleQuotedString):
             print(f"  {tool_name}: {val.characters}")
         elif isinstance(val, JSONObject):
             print(f"  {tool_name}:")
-            for k, v in zip(val.keys, val.values):
+            for k, v in zip(val.keys, val.values, strict=True):
                 rule = k.characters if isinstance(k, DoubleQuotedString) else str(k)
                 action = v.characters if isinstance(v, DoubleQuotedString) else str(v)
                 print(f"    {rule}: {action}")

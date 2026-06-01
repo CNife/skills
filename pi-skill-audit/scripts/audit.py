@@ -27,7 +27,6 @@ def parse_args():
     sessions = os.path.expanduser("~/.pi/agent/sessions")
     skills = os.path.expanduser("~/.agents/skills")
 
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     for i, a in enumerate(sys.argv[1:]):
         if a == "--sessions" and i + 2 < len(sys.argv):
             sessions = sys.argv[i + 2]
@@ -70,7 +69,7 @@ def count_skill_invocations(sessions_dir: str) -> Counter:
 
                         # Pattern 1: user message with <skill name="...">
                         if record_type == "message" and msg.get("role") == "user":
-                            for item in (msg.get("content") or []):
+                            for item in msg.get("content") or []:
                                 if isinstance(item, dict) and item.get("type") == "text":
                                     for match in re.finditer(
                                         r'<skill name="([^"]+)"', item.get("text", "")
@@ -79,7 +78,7 @@ def count_skill_invocations(sessions_dir: str) -> Counter:
 
                         # Pattern 2: agent tool_call reading SKILL.md
                         if record_type == "message" and msg.get("role") == "assistant":
-                            for item in (msg.get("content") or []):
+                            for item in msg.get("content") or []:
                                 if (
                                     isinstance(item, dict)
                                     and item.get("type") == "toolCall"
@@ -109,13 +108,11 @@ def get_installed_skills(skills_dir: str) -> list[str]:
 def categorize(counts: Counter, installed: list[str]) -> dict:
     """Categorize skills into usage tiers and separate installed vs uninstalled."""
     result = {
-        "high": [],      # >= 10
-        "medium": [],    # 3-9
-        "low": [],       # 1-2
-        "unused": [],    # 0 but installed
+        "high": [],  # >= 10
+        "medium": [],  # 3-9
+        "low": [],  # 1-2
+        "unused": [],  # 0 but installed
     }
-
-    installed_set = set(installed)
 
     for skill in installed:
         count = counts.get(skill, 0)
@@ -131,15 +128,14 @@ def categorize(counts: Counter, installed: list[str]) -> dict:
     return result
 
 
-def print_report(categorized: dict, total_calls: int, unique_skills: int,
-                 installed_count: int):
+def print_report(categorized: dict, total_calls: int, unique_skills: int, installed_count: int):
     """Print a formatted audit report."""
     print()
     print("=" * 60)
     print("  Pi Agent Skill Audit Report")
     print("=" * 60)
-    print(f"  Sessions scanned:     ~/.pi/agent/sessions/")
-    print(f"  Skills directory:     ~/.agents/skills/")
+    print("  Sessions scanned:     ~/.pi/agent/sessions/")
+    print("  Skills directory:     ~/.agents/skills/")
     print(f"  Installed skills:     {installed_count}")
     print(f"  Skills with usage:    {unique_skills}")
     print(f"  Total invocations:    {total_calls}")
@@ -165,8 +161,10 @@ def print_report(categorized: dict, total_calls: int, unique_skills: int,
     used = sum(len(v) for k, v in categorized.items() if k != "unused")
     unused_count = len(categorized["unused"])
     print(f"  {'─' * 50}")
-    print(f"  Used:   {used}/{installed_count}  ({used/installed_count*100:.0f}%)")
-    print(f"  Unused: {unused_count}/{installed_count}  ({unused_count/installed_count*100:.0f}%)")
+    print(f"  Used:   {used}/{installed_count}  ({used / installed_count * 100:.0f}%)")
+    print(
+        f"  Unused: {unused_count}/{installed_count}  ({unused_count / installed_count * 100:.0f}%)"
+    )
     print()
 
 
@@ -187,7 +185,7 @@ def main():
     print_report(categorized, total_calls, unique_skills, len(installed))
 
     # Unused list (for piping / copy-paste)
-    unused = [s for s in categorized["unused"]]
+    unused = list(categorized["unused"])
     if unused:
         print("  Skills with zero usage (copy-paste ready):")
         print(f"  {' '.join(s[0] for s in unused)}")
