@@ -3,7 +3,7 @@ name: pi-trending
 description: >
   Discover trending Pi Agent packages — what's hot, what each package does, and
   how to track the latest pi ecosystem developments. 当用户想了解 pi 生态最新
- 动态、寻找好用的扩展/技能/主题、比较包的热度、决定装什么包、或者任何涉及
+  动态、寻找好用的扩展/技能/主题、比较包的热度、决定装什么包、或者任何涉及
   "看看 pi 社区有什么好东西" 的意图时，务必使用此技能。即使用户没有明确说
   "trending"，只要涉及发现/推荐/比较 pi 包就应该触发。
   Triggers: "最近有什么热门的 pi 包", "pi 生态有什么新项目",
