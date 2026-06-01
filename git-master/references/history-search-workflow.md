@@ -3,6 +3,7 @@
 ## PHASE H1: Determine Search Type
 
 <history_search_type>
+
 ### H1.1 Parse User Request
 
 | User Request | Search Type | Tool |
@@ -16,13 +17,14 @@
 
 ### H1.2 Extract Search Parameters
 
-```
+```text
 From user request, identify:
 - SEARCH_TERM: The string/pattern to find
 - FILE_SCOPE: Specific file(s) or entire repo
 - TIME_RANGE: All time or specific period
 - BRANCH_SCOPE: Current branch or --all branches
 ```
+
 </history_search_type>
 
 ---
@@ -30,6 +32,7 @@ From user request, identify:
 ## PHASE H2: Execute Search
 
 <history_search_exec>
+
 ### H2.1 Pickaxe Search (git log -S)
 
 **Purpose**: Find commits that ADD or REMOVE a specific string
@@ -55,6 +58,7 @@ git log -S "searchstring" -i --oneline
 ```
 
 **Example Use Cases:**
+
 ```bash
 # When was this function added?
 git log -S "def calculate_discount" --oneline
@@ -85,7 +89,8 @@ git log -G "TODO|FIXME|HACK" --oneline
 ```
 
 **-S vs -G Difference:**
-```
+
+```text
 -S "foo": Finds commits where COUNT of "foo" changed
 -G "foo": Finds commits where DIFF contains "foo"
 
@@ -118,7 +123,8 @@ git blame --porcelain path/to/file.py
 ```
 
 **Reading Blame Output:**
-```
+
+```text
 ^abc1234 (Author Name 2024-01-15 10:30:00 +0900 42) code_line_here
 |         |            |                       |    +-- Line content
 |         |            |                       +-- Line number
@@ -153,6 +159,7 @@ git bisect reset
 ```
 
 **Automated Bisect (with test script):**
+
 ```bash
 # If you have a test that fails on bug:
 git bisect start
@@ -182,6 +189,7 @@ git log --all --full-history -- "**/deleted_file.py"
 # Who changed file most
 git shortlog -sn -- path/to/file.py
 ```
+
 </history_search_exec>
 
 ---
@@ -189,9 +197,10 @@ git shortlog -sn -- path/to/file.py
 ## PHASE H3: Present Results
 
 <history_results>
+
 ### H3.1 Format Search Results
 
-```
+```text
 SEARCH QUERY: "<what user asked>"
 SEARCH TYPE: <PICKAXE | REGEX | BLAME | BISECT | FILE_LOG>
 COMMAND USED: git log -S "..." ...
@@ -217,7 +226,7 @@ DIFF EXCERPT (if applicable):
 
 Based on search results, offer relevant follow-ups:
 
-```
+```text
 FOUND THAT commit abc1234 introduced the change.
 
 POTENTIAL ACTIONS:
@@ -226,4 +235,5 @@ POTENTIAL ACTIONS:
 - See related commits: git log --ancestry-path abc1234..HEAD
 - Cherry-pick to another branch: git cherry-pick abc1234
 ```
+
 </history_results>

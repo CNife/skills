@@ -3,6 +3,7 @@
 ## PHASE R1: Rebase Context Analysis
 
 <rebase_context>
+
 ### R1.1 Parallel Information Gathering
 
 ```bash
@@ -27,7 +28,7 @@ git stash list
 
 ### R1.3 Determine Rebase Strategy
 
-```
+```text
 USER REQUEST -> STRATEGY:
 
 "squash commits" / "cleanup" / "정리"
@@ -45,6 +46,7 @@ USER REQUEST -> STRATEGY:
 "split commit" / "커밋 분리"
   -> INTERACTIVE_EDIT
 ```
+
 </rebase_context>
 
 ---
@@ -52,6 +54,7 @@ USER REQUEST -> STRATEGY:
 ## PHASE R2: Rebase Execution
 
 <rebase_execution>
+
 ### R2.1 Interactive Rebase (Squash/Reorder)
 
 ```bash
@@ -96,7 +99,7 @@ git rebase --onto origin/main $(git merge-base HEAD origin/main) HEAD
 
 ### R2.4 Handling Conflicts
 
-```
+```text
 CONFLICT DETECTED -> WORKFLOW:
 
 1. Identify conflicting files:
@@ -126,6 +129,7 @@ CONFLICT DETECTED -> WORKFLOW:
 | Need original commits | `git reflog` -> `git reset --hard <hash>` | Reflog keeps 90 days |
 | Accidentally force-pushed | `git reflog` -> coordinate with team | May need to notify others |
 | Lost commits after rebase | `git fsck --lost-found` | Nuclear option |
+
 </rebase_execution>
 
 ---
@@ -133,6 +137,7 @@ CONFLICT DETECTED -> WORKFLOW:
 ## PHASE R3: Post-Rebase Verification
 
 <rebase_verify>
+
 ```bash
 # Verify clean state
 git status
@@ -149,7 +154,7 @@ git diff ORIG_HEAD..HEAD --stat
 
 ### Push Strategy
 
-```
+```text
 IF branch never pushed:
   -> git push -u origin <branch>
 
@@ -158,13 +163,14 @@ IF branch already pushed:
   -> ALWAYS use --force-with-lease (not --force)
   -> Prevents overwriting others' work
 ```
+
 </rebase_verify>
 
 ---
 
 ## PHASE R4: Rebase Report
 
-```
+```text
 REBASE SUMMARY:
   Strategy: <SQUASH | AUTOSQUASH | ONTO | REORDER>
   Commits before: N

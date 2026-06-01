@@ -12,7 +12,7 @@
 
 ### Decision Tree
 
-```
+```text
 Is this on main/master?
   YES -> NEW_COMMITS_ONLY, never rewrite
   NO -> Continue
@@ -45,7 +45,7 @@ Is history messy?
 
 ## FINAL CHECK BEFORE EXECUTION (BLOCKING)
 
-```
+```text
 STOP AND VERIFY - Do not proceed until ALL boxes checked:
 
 [] File count check: N files -> at least ceil(N/3) commits?
@@ -64,6 +64,7 @@ STOP AND VERIFY - Do not proceed until ALL boxes checked:
 ```
 
 **HARD STOP CONDITIONS:**
+
 - Making 1 commit from 3+ files -> **WRONG. SPLIT.**
 - Making 2 commits from 10+ files -> **WRONG. SPLIT MORE.**
 - Can't justify file grouping in one sentence -> **WRONG. SPLIT.**
@@ -72,15 +73,18 @@ STOP AND VERIFY - Do not proceed until ALL boxes checked:
 ---
 
 ### Commit Mode
+
 - One commit for many files -> SPLIT
 - Default to semantic style -> DETECT first
 
 ### Rebase Mode
+
 - Rebase main/master -> NEVER
 - `--force` instead of `--force-with-lease` -> DANGEROUS
 - Rebase without stashing dirty files -> WILL FAIL
 
 ### History Search Mode
+
 - `-S` when `-G` is appropriate -> Wrong results
 - Blame without `-C` on moved code -> Wrong attribution
 - Bisect without proper good/bad boundaries -> Wasted time

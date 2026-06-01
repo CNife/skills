@@ -21,6 +21,7 @@ git log --oneline $(git merge-base HEAD main 2>/dev/null || git merge-base HEAD 
 ```
 
 **Capture these data points simultaneously:**
+
 1. What files changed (staged vs unstaged)
 2. Recent 30 commit messages for style detection
 3. Branch position relative to main/master
@@ -37,7 +38,7 @@ git log --oneline $(git merge-base HEAD main 2>/dev/null || git merge-base HEAD 
 
 ### 1.1 Language Detection
 
-```
+```text
 Count from git log -30:
 - Korean characters: N commits
 - English only: M commits
@@ -59,7 +60,8 @@ DECISION:
 | `SHORT` | Minimal keywords | `format`, `lint` | 1-3 words only |
 
 **Detection Algorithm:**
-```
+
+```text
 semantic_count = commits matching semantic regex
 plain_count = non-semantic commits with >3 words
 short_count = commits with <=3 words
@@ -74,7 +76,7 @@ ELSE: STYLE = PLAIN (safe default)
 
 **You MUST output this block before proceeding to Phase 2. NO EXCEPTIONS.**
 
-```
+```text
 STYLE DETECTION RESULT
 ======================
 Analyzed: 30 commits from git log
@@ -106,7 +108,7 @@ All commits will follow: [LANGUAGE] + [STYLE]
 <branch_analysis>
 ### 2.1 Determine Branch State
 
-```
+```text
 BRANCH_STATE:
   current_branch: <name>
   has_upstream: true | false
@@ -124,7 +126,7 @@ REWRITE_SAFETY:
 
 ### 2.2 History Rewrite Strategy Decision
 
-```
+```text
 IF current_branch == main OR current_branch == master:
   -> STRATEGY = NEW_COMMITS_ONLY
   -> Never fixup, never rebase
@@ -141,6 +143,7 @@ ELSE IF pushed but not merged:
   -> STRATEGY = CAREFUL_REWRITE
   -> Fixup OK but warn about force push
 ```
+
 </branch_analysis>
 
 ---
@@ -152,7 +155,7 @@ ELSE IF pushed but not merged:
 
 ### 3.0 Calculate Minimum Commit Count FIRST
 
-```
+```text
 FORMULA: min_commits = ceil(file_count / 3)
 
  3 files -> min 1 commit
@@ -165,9 +168,9 @@ FORMULA: min_commits = ceil(file_count / 3)
 
 ### 3.1 Split by Directory/Module FIRST (Primary Split)
 
-**RULE: Different directories = Different commits (almost always)**
+## RULE: Different directories = Different commits (almost always)
 
-```
+```text
 Example: 8 changed files
   - app/[locale]/page.tsx
   - app/[locale]/layout.tsx
@@ -194,7 +197,7 @@ CORRECT: Split by directory/concern:
 
 **Within same directory, split by logical concern:**
 
-```
+```text
 Example: components/demo/ has 4 files
   - browser-frame.tsx (UI frame)
   - shopify-full-site.tsx (specific demo)
@@ -209,7 +212,7 @@ Option B (preferred): 2 commits
 
 ### 3.3 NEVER Do This (Anti-Pattern Examples)
 
-```
+```text
 WRONG: "Refactor entire landing page" - 1 commit with 15 files
 WRONG: "Update components and tests" - 1 commit mixing concerns
 WRONG: "Big update" - Any commit touching 5+ unrelated files
@@ -221,7 +224,7 @@ RIGHT: A reviewer can understand each commit in 30 seconds
 
 ### 3.4 Implementation + Test Pairing (MANDATORY)
 
-```
+```text
 RULE: Test files MUST be in same commit as implementation
 
 Test patterns to match:
@@ -237,7 +240,7 @@ Test patterns to match:
 
 **NON-NEGOTIABLE: Before finalizing your commit plan, you MUST:**
 
-```
+```text
 FOR EACH planned commit with 3+ files:
   1. List all files in this commit
   2. Write ONE sentence explaining why they MUST be together
@@ -262,7 +265,7 @@ INVALID reasons (MUST SPLIT instead):
 
 ### 3.6 Dependency Ordering
 
-```
+```text
 Level 0: Utilities, constants, type definitions
 Level 1: Models, schemas, interfaces
 Level 2: Services, business logic
@@ -275,6 +278,7 @@ COMMIT ORDER: Level 0 -> Level 1 -> Level 2 -> Level 3 -> Level 4
 ### 3.7 Create Commit Groups
 
 For each logical feature/change:
+
 ```yaml
 - group_id: 1
   feature: "Add Shopify discount deletion"
@@ -291,7 +295,7 @@ For each logical feature/change:
 
 **You MUST output this block before proceeding to Phase 4. NO EXCEPTIONS.**
 
-```
+```text
 COMMIT PLAN
 ===========
 Files changed: N
@@ -318,6 +322,7 @@ Execution order: Commit 1 -> Commit 2 -> Commit 3
 ```
 
 **VALIDATION BEFORE EXECUTION:**
+
 - Each commit has <=4 files (or justified)
 - Each commit message matches detected STYLE + LANGUAGE
 - Test files paired with implementation
@@ -332,9 +337,10 @@ Execution order: Commit 1 -> Commit 2 -> Commit 3
 ## PHASE 4: Commit Strategy Decision
 
 <strategy_decision>
-### 4.1 For Each Commit Group, Decide:
 
-```
+### 4.1 For Each Commit Group, Decide
+
+```text
 FIXUP if:
   - Change complements existing commit's intent
   - Same feature, fixing bugs or adding missing parts
@@ -350,7 +356,7 @@ NEW COMMIT if:
 
 ### 4.2 History Rebuild Decision (Aggressive Option)
 
-```
+```text
 CONSIDER RESET & REBUILD when:
   - History is messy (many small fixups already)
   - Commits are not atomic (mixed concerns)
@@ -381,6 +387,7 @@ EXECUTION_PLAN:
       level: N
   requires_force_push: true | false
 ```
+
 </strategy_decision>
 
 ---
@@ -388,10 +395,12 @@ EXECUTION_PLAN:
 ## PHASE 5: Commit Execution
 
 <execution>
+
 ### 5.1 Track Commit Progress
 
 Use your task tracking system to register each commit as a trackable item:
-```
+
+```text
 - [ ] Fixup: <description> -> <target-hash>
 - [ ] New: <description>
 - [ ] Rebase autosquash
@@ -434,7 +443,7 @@ git log -1 --oneline
 
 **Based on COMMIT_CONFIG from Phase 1:**
 
-```
+```text
 IF style == SEMANTIC AND language == KOREAN:
   -> "feat: 로그인 기능 추가"
 
@@ -452,12 +461,14 @@ IF style == SHORT:
 ```
 
 **VALIDATION before each commit:**
+
 1. Does message match detected style?
 2. Does language match detected language?
 3. Is it similar to examples from git log?
 
 If ANY check fails -> REWRITE message.
-```
+
+```text
 </execution>
 
 ---
@@ -480,7 +491,7 @@ git log --oneline $(git merge-base HEAD main 2>/dev/null || git merge-base HEAD 
 
 ### 6.2 Force Push Decision
 
-```
+```text
 IF fixup was used AND branch has upstream:
   -> Requires: git push --force-with-lease
   -> WARN user about force push implications
@@ -491,7 +502,7 @@ IF only new commits:
 
 ### 6.3 Final Report
 
-```
+```text
 COMMIT SUMMARY:
   Strategy: <what was done>
   Commits created: N
@@ -506,4 +517,5 @@ NEXT STEPS:
   - git push [--force-with-lease]
   - Create PR if ready
 ```
+
 </verification>
