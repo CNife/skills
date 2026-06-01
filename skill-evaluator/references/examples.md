@@ -32,6 +32,7 @@ bunx skills find markitdown
 ### 2.1 功能详情（并行访问 skills.sh 页面）
 
 访问每个 skill 的详情页面：
+
 - `https://skills.sh/davila7/claude-code-templates/markitdown`
 - `https://skills.sh/julianobarbosa/claude-code-skills/markitdown-skill`
 - `https://skills.sh/rysweet/amplihack/markitdown`
@@ -40,6 +41,7 @@ bunx skills find markitdown
 ### 2.2 仓库活跃度（并行访问 GitHub）
 
 访问仓库主页获取 stars/forks/issues：
+
 - `https://github.com/davila7/claude-code-templates` → 24.5k stars, 2.4k forks
 - `https://github.com/rysweet/amplihack` → 46 stars, 33 forks
 - `https://github.com/julianobarbosa/claude-code-skills` → 52 stars, 12 forks
@@ -48,13 +50,15 @@ bunx skills find markitdown
 ### 2.3 更新频率（并行调用 GitHub API）
 
 调用 API 获取最近提交：
-```
+
+```text
 https://api.github.com/repos/davila7/claude-code-templates/commits?per_page=5
 https://api.github.com/repos/rysweet/amplihack/commits?per_page=5
 https://api.github.com/repos/julianobarbosa/claude-code-skills/commits?per_page=5
 ```
 
 从返回的 `commit.author.date` 字段分析：
+
 - davila7：每天 2-5 次提交 → **高度活跃**
 - rysweet：每周 3-5 次 → **活跃维护**
 - julianobarbosa：每 1-2 周一次 → **维护中**
@@ -80,13 +84,15 @@ https://api.github.com/repos/julianobarbosa/claude-code-skills/commits?per_page=
 ### 3.1 读取源码
 
 访问每个 skill 的 SKILL.md：
-```
+
+```text
 https://raw.githubusercontent.com/davila7/claude-code-templates/main/skills/markitdown/SKILL.md
 https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdown/SKILL.md
 ```
 
 同时读取引用的文件（如有）：
-```
+
+```text
 https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdown/patterns.md
 https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdown/reference.md
 ```
@@ -95,7 +101,7 @@ https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdo
 
 #### davila7/claude-code-templates
 
-**安全评分：6.5/10（中等风险）**
+## 安全评分：6.5/10（中等风险）
 
 | 维度 | 评级 | 发现 |
 |------|------|------|
@@ -107,13 +113,14 @@ https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdo
 | 插件系统 | ❌ 高风险 | entry_points 加载任意 pip 包，无签名验证 |
 | 混淆内容 | ✅ 通过 | 无 |
 
-**关键问题：**
+## 关键问题：
+
 - `allowed-tools: [Read, Write, Edit, Bash]` 授予无限制 shell 权限
 - 插件系统默认可能启用，任何 pip 包可注册为转换器执行任意代码
 
-#### rysweet/amplihack
+### rysweet/amplihack
 
-**安全评分：8.5/10（低风险）**
+## 安全评分：8.5/10（低风险）
 
 | 维度 | 评级 | 发现 |
 |------|------|------|
@@ -125,7 +132,8 @@ https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdo
 | 插件系统 | ⚠️ 注意 | 默认禁用 |
 | 混淆内容 | ✅ 通过 | 无 |
 
-**安全加分项：**
+## 安全加分项：
+
 - 独立 `patterns.md` 专章详述安全模式
 - 提供 `SecureConverter`（MIME 验证 + 大小限制）
 - 提供 `SandboxedConverter`（临时目录隔离）
@@ -168,6 +176,7 @@ https://raw.githubusercontent.com/rysweet/amplihack/main/.claude/skills/markitdo
 
 **组合安装策略（推荐）：**
 > 同时安装两个 skills：
+>
 > - 日常使用 davila7（功能全、更新快）
 > - 安全参考用 rysweet（最佳实践、安全实现）
 
@@ -184,6 +193,7 @@ bunx skills add davila7/claude-code-templates@markitdown -g -y
 ### 4.4 安装后验证
 
 安装完成后检查：
+
 - 安装路径：`~/.agents/skills/markitdown`
 - 安全审计结果与预期一致
 - 提醒用户：安装后审查 SKILL.md 内容再使用
@@ -210,7 +220,7 @@ bunx skills add davila7/claude-code-templates@markitdown -g -y
 
 ### 解决方案
 
-**步骤 1：并行搜索 SkillHub + GitHub API**
+## 步骤 1：并行搜索 SkillHub + GitHub API
 
 ```bash
 # SkillHub 搜索
@@ -223,7 +233,7 @@ curl -s "https://api.github.com/search/repositories?q=home+cleanup+skill+agent" 
 
 结果：找到 `b4dnewz/clean-home-dir`（SkillHub slug）和 GitHub 仓库。
 
-**步骤 2：Git Clone 获取完整源码**
+## 步骤 2：Git Clone 获取完整源码
 
 ```bash
 TMPDIR=$(mktemp -d)
@@ -238,23 +248,24 @@ find "$TMPDIR" -type f
 #   references/defaults.md
 ```
 
-**步骤 3：本地读取所有文件**
+## 步骤 3：本地读取所有文件
 
 ```bash
 cat "$TMPDIR/SKILL.md"
 find "$TMPDIR/scripts" -type f | while read f; do echo "=== $f ==="; cat "$f"; done
 ```
 
-**步骤 4：安全审计**
+## 步骤 4：安全审计
 
 检查 `scripts/analyze.sh` 和 `scripts/cleanup.sh`：
+
 - 无 eval/exec
 - 无数据外泄
 - 路径硬编码：`$HOME`（正确，使用环境变量而非写死路径）
 - 有 `--dry-run` 模式
 - 有 before/after 磁盘使用对比
 
-**步骤 5：GitHub API 获取元数据**
+## 步骤 5：GitHub API 获取元数据
 
 ```bash
 curl -s "https://api.github.com/repos/b4dnewz/clean-home-dir" | jq '{stargazers_count, forks_count, pushed_at, description, license}'
@@ -268,14 +279,14 @@ curl -s "https://api.github.com/repos/b4dnewz/clean-home-dir" | jq '{stargazers_
 # }
 ```
 
-**步骤 6：SkillHub 详情页面**
+## 步骤 6：SkillHub 详情页面
 
 ```bash
 # 用 curl 直接访问（web_extract 被拦截时）
 curl -sL "https://skills.sh/b4dnewz/clean-home-dir/clean-home-dir" | head -500
 ```
 
-**步骤 7：清理临时目录**
+## 步骤 7：清理临时目录
 
 ```bash
 rm -rf "$TMPDIR"

@@ -66,7 +66,8 @@ SkillHub 下载的 skill 中，作者机器特有路径硬编码是常见问题�
 
 传统代码扫描器无法检测，必须人工逐行阅读。
 
-**检查要点：**
+## 检查要点：
+
 - SKILL.md 中是否有 "忽略"、"覆盖"、"优先于" 等指令覆盖关键词
 - 是否有向外部 URL 追加参数的指令
 - 是否有指导 agent 读取环境变量并嵌入输出的指令
@@ -77,7 +78,8 @@ SkillHub 下载的 skill 中，作者机器特有路径硬编码是常见问题�
 
 **真实案例：** PR 描述生成器将 `OPENAI_API_KEY` 附加到 GitHub PR 历史。
 
-**检查要点：**
+## 检查要点：
+
 - 是否要求读取 `$HOME`、`$USER`、`$ANTHROPIC_API_KEY` 等敏感变量
 - 是否指导将环境变量写入文件、嵌入 commit message、发送到外部 API
 
@@ -85,7 +87,8 @@ SkillHub 下载的 skill 中，作者机器特有路径硬编码是常见问题�
 
 在 skill 压缩包中附带 shell/Python 脚本，SKILL.md 指导 agent 在"首次激活时运行设置脚本"。
 
-**检查要点：**
+## 检查要点：
+
 - 功能简单的 skill 是否附带了不必要的脚本文件（如 "git commit 格式化器" 包含 `.py` 或 `.sh`）
 - 是否有 `pip install` 从非官方源安装依赖
 - 是否有指导执行未知脚本的指令
@@ -94,7 +97,8 @@ SkillHub 下载的 skill 中，作者机器特有路径硬编码是常见问题�
 
 仅在特定条件下触发（使用次数达到阈值、特定环境变量存在、系统日期匹配），以规避审计。
 
-**检查要点：**
+## 检查要点：
+
 - 是否有 "当 X 时执行 Y" 的条件逻辑，且 Y 与 skill 功能无关
 - 是否有计次、时间判断、环境变量检查等异常逻辑
 
@@ -160,6 +164,7 @@ SkillHub 下载的 skill 中，作者机器特有路径硬编码是常见问题�
 ### Agent Trust Hub（Gen Digital）
 
 扫描 skills 检测恶意软件、数据窃取、安全漏洞。已检测 12K+ 恶意 skills。
+
 - **Pass** = 未发现问题
 - **Warn** = 有警告，需关注
 - **Fail** = 发现严重问题
@@ -167,12 +172,14 @@ SkillHub 下载的 skill 中，作者机器特有路径硬编码是常见问题�
 ### Socket（Socket.dev）
 
 供应链安全扫描，检测多语言 ecosystem 中的恶意行为。
+
 - **0 alerts** = 未发现问题
 - **有 alert** = 需查看具体内容
 
 ### Snyk
 
 开源安全平台，扫描已知漏洞和恶意模式。
+
 - **No Risk** = 未发现问题
 - **Med Risk** = 有中等风险警告
 - **High Risk** = 有高风险
@@ -184,6 +191,7 @@ SkillHub 下载的 skill 中，作者机器特有路径硬编码是常见问题�
 ### Agents Rule of Two（Meta）
 
 Agent 不应同时满足以下三个条件中的超过两个：
+
 1. 访问敏感数据
 2. 暴露于不可信内容
 3. 能够外部通信
@@ -228,7 +236,7 @@ Agent 不应同时满足以下三个条件中的超过两个：
 
 通过 GitHub API 获取最近 5 次提交日期：
 
-```
+```text
 https://api.github.com/repos/{owner}/{repo}/commits?per_page=5
 ```
 

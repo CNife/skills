@@ -45,6 +45,7 @@
 **Type:** Pure AI agent skill (no external tools)
 **Language:** Universal
 **Detects:** All 22 named code smells from Fowler's Refactoring catalog:
+
 - Duplicated Code, Long Method, Large Class, Long Parameter List, Divergent Change
 - Shotgun Surgery, Feature Envy, Data Clumps, Primitive Obsession, Switch Statements
 - Parallel Inheritance Hierarchies, Lazy Class, Speculative Generality, Temporary Field
@@ -62,6 +63,7 @@
 **Type:** Pure AI agent skill
 **Language:** Universal (with Python emphasis)
 **Detects:** 5 anti-patterns from amplihack philosophy:
+
 1. Over-abstraction (unnecessary ABCs, deep inheritance)
 2. Complex inheritance (>2 levels)
 3. Large functions (>50 lines)
@@ -71,13 +73,14 @@
 **Output:** Before/after code examples, detection checklists, fix strategies
 **Safety: 9/10** — Pure SKILL.md + README, no scripts, read-only.
 **Install:** `bunx skills add rysweet/amplihack@code-smell-detector -g -y`
-**⚠️ Note:** Heavily tied to amplihack philosophy; some rules (__all__) are Python-specific.
+**⚠️ Note:** Heavily tied to amplihack philosophy; some rules (**all**) are Python-specific.
 
 ### 3. codeprobe (skills.sh)
 
 **Type:** Multi-agent audit orchestrator (9 sub-skills)
 **Language:** Universal (PHP/Python/JS/TS with language-specific references)
 **Detects:**
+
 - Security vulnerabilities
 - SOLID violations
 - Architecture issues + dependency cycles

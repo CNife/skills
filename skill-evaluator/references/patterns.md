@@ -108,7 +108,8 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 
 **正确做法：** 检查最近提交时间，超过 4 个月未更新的 skill 大概率已停止维护，不建议使用。
 
-**判断标准：**
+## 判断标准：
+
 - 今天/昨天 → 活跃维护
 - 1-4 周前 → 维护中
 - 1-4 月前 → 低维护
@@ -138,7 +139,8 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 
 **正确做法：** 根据 skill 复杂度调整审计深度。简单 skill 检查致命红线即可；复杂 skill（含脚本、插件、网络调用）才需要完整审计。
 
-**经验法则：**
+## 经验法则：
+
 - SKILL.md < 100 行，无脚本 → 检查致命红线（5 分钟）
 - SKILL.md 100-300 行 → 标准审计（15 分钟）
 - SKILL.md > 300 行或有附带脚本 → 完整审计（30 分钟+）
@@ -159,7 +161,8 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 
 **歧义根因：** "skill.sh" 恰好是一个合法的文件名（shell 脚本后缀），但作为安装渠道问法时 99% 情况指 skills.sh 平台。SkillHub 没有同名文件歧义，直接识别为平台名。
 
-**判断标准：**
+## 判断标准：
+
 - 如果用户问的是"是否能通过 skill.sh 安装"→ 查 skills.sh 平台
 - 如果用户问的是"skillhub 上有吗"→ 查 SkillHub 平台
 - 如果用户问的是"有没有 skill.sh 安装脚本"→ 才去查 repo 文件列表
@@ -176,7 +179,8 @@ curl -s "https://api.github.com/repos/{owner}/{repo}/commits?per_page=5" | jq '.
 | SkillHub (`skillhub install`) | `skillhub remove <slug>` | 目录 + `.skills_store_lock.json` 条目 |
 | 手动 git clone | 手动 `rm -rf` | 需要额外检查 lock/state 文件 |
 
-**检查残留命令：**
+## 检查残留命令：
+
 ```bash
 # 检查 lock 文件中的残留条目
 cat ~/.agents/skills/.skills_store_lock.json
@@ -203,6 +207,7 @@ hermes skills list
 | SkillHub (`skillhub search`) | 用 `git clone` 找对应仓库 |
 
 **重试策略：** SkillHub 下载（lightmake.site）不稳定。遇到 SSL/超时错误：
+
 1. 重试 1 次
 2. 再失败则用 `git clone` 找对应 GitHub 仓库
 3. 都失败则在报告中注明"下载失败，无法获取源码"
@@ -214,20 +219,23 @@ hermes skills list
 **正确做法：** 在阶段 2（信息收集）或阶段 4（推荐时）加入跨平台检查：
 
 1. **找到候选后立即交叉搜索** — 用候选 skill 的名称/关键词在另一个平台上搜索：
+
    ```bash
    # 如果候选来自 SkillHub → 查 skills.sh
    bunx skills find "<keyword>" 2>&1 | grep -i "<skill-name>"
-   
+
    # 如果候选来自 skills.sh → 查 SkillHub
    skillhub search "<keyword>" 2>&1 | grep -i "<skill-name>"
    ```
+
 2. **记录结果** — 在对比表中加一行"跨平台收录"。
 3. **报告影响**：
    - 独占 skill → 告知用户只能用对应 CLI 安装
    - 双平台 → 优先推荐安装量更高/更新更频繁的那个来源
 4. **常见情况**：BookForge、HefestoAI 等发布者选择 SkillHub 独占。Addy Osmani、Microsoft 等官方组织通常在 skills.sh 发布。
 
-**判断标准：**
+## 判断标准：
+
 - `bunx skills find` 返回结果 → skills.sh 有收录（记录 `owner/repo@skill`）
 - `skillhub search` 返回结果 → SkillHub 有收录（记录 slug）
 - 两者都无 → 可能只存在于 GitHub 仓库，需手动安装
@@ -340,6 +348,7 @@ md.convert(user_input)  # 可能被 ../../ 攻击
 ### 组合安装
 
 > 推荐同时安装 [Skill A] + [Skill B]：
+>
 > - 日常使用 [Skill A]：[优势]
 > - 安全参考 [Skill B]：[优势]
 
@@ -383,7 +392,7 @@ rm -rf /tmp/skillhub-tmp-*
 rm -rf /tmp/tmp.*
 ```
 
-```
+```text
 用户需求：评估/选择 skill
     │
     ├─ 是否指定了具体 skill 名称？
