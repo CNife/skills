@@ -65,19 +65,24 @@ The helper does this automatically when you call `replace --apply`. Read `refere
 A single-file Python 3 stdlib wrapper. Same on every OS. The agent's default entry point.
 
 ### `search` — find all matches
+
 ```bash
 python3 scripts/ast_grep_helper.py search 'console.log($MSG)' --lang ts src/
 ```
+
 Validates pattern offline; flags: `--lang`, `--globs`, `-C`, `--json-out`.
 
 ### `replace` — rewrite by pattern, dry-run by default
+
 ```bash
 python3 scripts/ast_grep_helper.py replace 'console.log($MSG)' 'logger.info($MSG)' --lang ts src/
 python3 scripts/ast_grep_helper.py replace 'console.log($MSG)' 'logger.info($MSG)' --lang ts src/ --apply
 ```
+
 Validates both pattern and rewrite. Two-pass automatically (preview then mutate).
 
 ### `scan` — run YAML rules
+
 ```bash
 python3 scripts/ast_grep_helper.py scan src/                          # auto-discover sgconfig.yml
 python3 scripts/ast_grep_helper.py scan -U src/                       # apply auto-fixes
@@ -85,12 +90,14 @@ python3 scripts/ast_grep_helper.py scan --report-style short src/     # CI annot
 ```
 
 ### `validate` — offline pattern check
+
 ```bash
 python3 scripts/ast_grep_helper.py validate 'console.log($MSG)' --lang ts
 python3 scripts/ast_grep_helper.py validate '\\w+' --lang ts         # catches regex misuse
 ```
 
 ### `langs` / `doctor` / `install`
+
 ```bash
 python3 scripts/ast_grep_helper.py langs      # list 25 supported languages
 python3 scripts/ast_grep_helper.py doctor     # check binary availability
@@ -120,7 +127,7 @@ sg run -p '$_' --lang ts --debug-query=cst src/file.ts | head -40     # inspect 
 
 ## Decision tree — what to use, when
 
-```
+```text
 USER asks for "find/rewrite/codemod"
 │
 ├─ structural pattern (function shape, call, class, import, control flow)
@@ -139,8 +146,6 @@ USER asks for "find/rewrite/codemod"
 If the user says "find all" or "every", default to ast-grep when the target is shaped (function, class, call, import, statement). Default to rg when the target is text (string content, comment, license header, file name, identifier substring).
 
 ---
-
-
 
 ---
 
@@ -161,11 +166,13 @@ Do not blindly retry with variations. Each failure has a reason; surface it.
 ## When to use YAML rules vs inline `-p` patterns
 
 **Use inline `-p`** when:
+
 - One-off ad-hoc query.
 - The pattern is simple (no constraints, no fix template).
 - You're exploring.
 
 **Use YAML rules** (file under `rules/`, run via `sg scan`) when:
+
 - The pattern is reused (lint rule, codemod that runs in CI).
 - You need `constraints`, `transform`, complex `inside`/`has`, or composite logic.
 - You want auto-fix (`fix:` field).
@@ -174,8 +181,6 @@ Do not blindly retry with variations. Each failure has a reason; surface it.
 The full YAML rule schema is in `references/yaml-rules.md`. Project setup (`sgconfig.yml`, `ruleDirs`, `utilDirs`) is in `references/sgconfig.md`.
 
 ---
-
-
 
 ---
 
@@ -197,17 +202,20 @@ The full YAML rule schema is in `references/yaml-rules.md`. Project setup (`sgco
 ## Invariants (do not break)
 
 ### Safety
+
 - **Validate before searching.** Call `helper validate` on every new pattern. Catches ~70% of "0 matches" cases (regex misuse).
 - **Dry-run before applying.** Never apply what you haven't inspected. Flow: `helper search` → `helper replace` (dry-run) → inspect → `helper replace --apply`.
 - **Two-pass writes.** When using `sg` directly, `--json` silently disables `--update-all`. Run preview and apply as separate invocations.
 
 ### Correctness
+
 - **Pattern is code, not regex.** `$VAR` = one AST node, `$$$` = many. Need `|`, `.*`, or `[a-z]`? Switch to `rg`.
 - **Single-quote patterns in shell.** `'$VAR'` not `"$VAR"` — shell expands the latter to empty string.
 - **`--lang` is required for stdin.** `sg` can't infer language from a pipe.
 - **Linux: alias `sg` → `ast-grep`** — `sg` collides with `setgroups`. The helper handles this automatically.
 
 ### Output discipline
+
 - `sg run --json=compact` → match objects `{ file, range, text, replacement?, lines, language }`. Pipe through `jq` for scripting.
 - Helper defaults to `file:line:column + preview`; pass `--json-out` for raw JSON.
 - **Always report file count**, not just match count. Users care about blast radius.

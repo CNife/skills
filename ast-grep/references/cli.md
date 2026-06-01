@@ -144,7 +144,7 @@ sg test [OPTIONS]
 
 A test directory looks like:
 
-```
+```text
 test/
 ├── no-console.yml          # `valid:` and `invalid:` snippets
 └── no-console-test.yml     # alternative test file format

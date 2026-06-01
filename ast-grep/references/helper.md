@@ -11,6 +11,7 @@ python3 scripts/ast_grep_helper.py search 'console.log($MSG)' --lang ts src/
 Validates the pattern offline first. If the pattern looks like regex (`\w`, `.*`, `|`, etc.) the helper exits with a hint and never calls `sg` — saves a round-trip. Pass `--force` to skip validation.
 
 Flags:
+
 - `--lang ts` (or any of the 25 languages; aliases like `js`, `py`, `rs`, `kt` accepted)
 - `--globs '!**/*.test.ts'` (repeatable; prefix `!` to exclude)
 - `-C 3` (context lines)
@@ -27,6 +28,7 @@ python3 scripts/ast_grep_helper.py replace 'console.log($MSG)' 'logger.info($MSG
 ```
 
 The helper:
+
 1. Validates both `pattern` and `rewrite` for hint-detectable mistakes.
 2. Runs pass 1 with `--json=compact` to collect matches and show a preview.
 3. If `--apply` is set, runs pass 2 with `--update-all` to mutate files.

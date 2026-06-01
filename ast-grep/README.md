@@ -58,7 +58,7 @@ See [SKILL.md](./SKILL.md) for full agent-facing usage and the [`references/`](.
 
 ## Project layout
 
-```
+```text
 ast-grep-skill/
 ├── SKILL.md                       agent-facing skill (loaded by Claude Code, OpenCode, pi, etc.)
 ├── README.md                      this file

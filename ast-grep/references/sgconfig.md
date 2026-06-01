@@ -8,7 +8,7 @@
 
 ## Minimal project layout
 
-```
+```text
 my-project/
 ├── sgconfig.yml
 ├── rules/
@@ -168,7 +168,7 @@ After this, a `css` rule with pattern `color: $C` will match `$CONTENT` strings.
 
 ### Monorepo with shared rules
 
-```
+```text
 monorepo/
 ├── sgconfig.yml          # root config — applies to entire monorepo
 ├── shared-rules/
