@@ -1,0 +1,23 @@
+{
+  "skill_name": "prompt-craft",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我优化这个提示词：\n\n请总结下面的文章，写得简短一点。文章：{article}",
+      "expected_output": "输出应包含简短诊断、完整改进版提示词和改动说明。改进版应保留中文，明确总结目标、长度、格式和输入分隔方式，不应询问保存文件。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "改一下这个 prompt，让模型抽取信息更稳定：\n\n从用户反馈里找出产品问题、情绪和建议。{feedback}",
+      "expected_output": "输出应包含诊断、完整改进版提示词和改动说明。改进版应补充结构化输出格式、字段定义、缺失值处理和反馈文本分隔方式，不应生成命令模板。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "请优化这个英文提示词，但保持英文：\n\nWrite a response to the customer. Be helpful and not too long. Customer message: {message}",
+      "expected_output": "输出应包含诊断、完整英文改进版提示词和改动说明。改进版应保留英文，明确客服回复目标、语气、长度和禁止事项，不应默认翻译成中文。",
+      "files": []
+    }
+  ]
+}

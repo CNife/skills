@@ -8,7 +8,7 @@
 pi-agent/            Pi Agent 生态专用技能
 ├── pi-skill-audit/  Pi 技能使用频率审计与清理
 ├── pi-trending/     Pi 生态热门包发现
-└── prompt-craft/    提示词工程 — 创建和改进 pi prompt template
+└── prompt-craft/    提示词优化 — 审查和改进通用 LLM 提示词
 
 hermes-agent/        Hermes Agent 专用技能
 └── worklog/         活动轨迹收集 → PDF → 邮件投递
@@ -53,7 +53,7 @@ bunx skills add CNife/skills@pi-agent/pi-skill-audit --full-depth
 |-------|------|
 | [pi-skill-audit](./pi-agent/pi-skill-audit) | Pi 技能使用频率审计 — 统计调用次数，四档分类，可视化报告，一键清理 |
 | [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 — 从 npm registry 计算趋势分 |
-| [prompt-craft](./pi-agent/prompt-craft) | 基于 OpenAI 提示词工程最佳实践，创建和改进 pi prompt template |
+| [prompt-craft](./pi-agent/prompt-craft) | 基于 OpenAI 提示词工程最佳实践，审查和优化通用 LLM 提示词 |
 
 ### hermes-agent/
 
