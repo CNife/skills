@@ -38,7 +38,6 @@ Pi agent 的技能是逐步累积的。新的实验性技能装上去后可能�
 ### 第一步：运行审计脚本
 
 ```bash
-cd ~/personal_code/skills/pi-skill-audit
 uv run --script scripts/audit.py
 ```
 

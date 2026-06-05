@@ -1,37 +1,81 @@
 # CNife's Agent Skills
 
-个人收集的 AI Agent Skills，用于 OpenCode、Claude Code 等 AI 编程助手。
+个人收集和开发的 AI Agent Skills，按类别组织。
+
+## 目录结构
+
+```text
+pi-agent/            Pi Agent 生态专用技能
+├── pi-skill-audit/  Pi 技能使用频率审计与清理
+└── pi-trending/     Pi 生态热门包发现
+
+hermes-agent/        Hermes Agent 专用技能
+└── worklog/         活动轨迹收集 → PDF → 邮件投递
+
+knowledge/           知识管理
+└── obsidian-diary/  会话总结 → Obsidian 工作日志/日记
+
+utility/             通用工具（与代理无关）
+├── cnife-skills-repo/   本仓库元技能和质量门禁
+├── models-dev-query/    AI 模型规格查询
+└── search-router/       智能搜索路由器
+
+.archive/            不再维护的历史技能（仅作参考）
+├── arch-wsl-cleanup/
+├── ast-grep/
+├── audit-hermes-agent-skills/
+├── chezmoi-sync/
+├── git-master/
+├── opencode-permission/
+├── optimize-agents-md/
+├── prompt-craft/
+├── qwen-code-permission/
+├── reminder-review-session/
+└── skill-evaluator/
+```
 
 ## 安装
 
 ```bash
-# 安装所有 skills
-bunx skills add CNife/skills
+# 从 GitHub 仓库安装
+bunx skills add CNife/skills --full-depth
 
-# 或单独安装某个 skill
-bunx skills add CNife/skills@python
+# 或安装单个技能（指定子目录路径）
+bunx skills add CNife/skills@pi-agent/pi-skill-audit --full-depth
 ```
 
 ## 可用 Skills
 
+### pi-agent/
+
 | Skill | 描述 |
 |-------|------|
-| [ast-grep](./ast-grep) | AST 结构搜索与代码重写 — 基于 ast-grep 的 25 语言结构化代码搜索和跨文件重构 |
-| [chezmoi-sync](./chezmoi-sync) | 一键同步 chezmoi dotfiles — 拉取远程 → 智能冲突处理 → 提交推送 → 状态验证 |
-| [audit-hermes-agent-skills](./audit-hermes-agent-skills) | 审计 Hermes Agent 技能使用频率，生成带中文描述和下拉决策的 XLSX，支持清理执行 |
-| [models-dev-query](./models-dev-query) | 查询 models.dev 数据库 — 模型规格、定价、上下文限制、提供商 API 端点、能力标记 |
-| [cnife-skills-repo](./cnife-skills-repo) | 本仓库结构说明、Python 项目规范、PEP 723 单脚本模式和 pre-commit 钩子配置 |
-| [git-master](./git-master) | Git 操作专家：原子提交、rebase/squash、历史搜索（blame/bisect/log -S） |
-| [obsidian-diary](./obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
-| [opencode-permission](./opencode-permission) | 自动化管理 OpenCode 权限规则（allow/ask/deny），支持 JSONC 注释保留，一键添加/删除/查看命令 |
-| [optimize-agents-md](./optimize-agents-md) | AGENTS.md 编写与优化指南，遵循渐进式披露原则 |
-| [pi-trending](./pi-trending) | 发现 Pi Agent 生态最新热门包 — 从 npm registry 计算趋势分，按 extension/skill/theme/prompt 分类展示 |
-| [prompt-craft](./prompt-craft) | 基于 OpenAI 提示词工程最佳实践，创建和改进 pi prompt template |
-| [qwen-code-permission](./qwen-code-permission) | 自动化管理 Qwen Code 权限规则（allow/ask/deny），一键添加命令到允许列表 |
-| [search-router](./search-router) | 基于 opencli 的智能搜索路由器，根据话题路由到最佳搜索源，带搜索理由软约束 |
-| [reminder-review-session](./reminder-review-session) | 会话问题解决后提醒我将知识整理到 Obsidian（日记或独立文章） |
-| [skill-evaluator](./skill-evaluator) | 评估、比较、推荐、发现和安装 AI Agent 技能 |
-| [worklog](./worklog) | 多数据源收集活动轨迹 → 分析工作与个人 → Kami 排版 PDF → 邮件投递 |
+| [pi-skill-audit](./pi-agent/pi-skill-audit) | Pi 技能使用频率审计 — 统计调用次数，四档分类，可视化报告，一键清理 |
+| [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 — 从 npm registry 计算趋势分 |
+
+### hermes-agent/
+
+| Skill | 描述 |
+|-------|------|
+| [worklog](./hermes-agent/worklog) | 多数据源收集活动轨迹 → 分析工作与个人 → Kami 排版 PDF → 邮件投递 |
+
+### knowledge/
+
+| Skill | 描述 |
+|-------|------|
+| [obsidian-diary](./knowledge/obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
+
+### utility/
+
+| Skill | 描述 |
+|-------|------|
+| [cnife-skills-repo](./utility/cnife-skills-repo) | 本仓库结构说明、Python 项目规范、PEP 723 单脚本模式和 pre-commit 钩子配置 |
+| [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 — 模型规格、定价、上下文限制、提供商 API 端点 |
+| [search-router](./utility/search-router) | 基于 opencli 的智能搜索路由器，根据话题路由到最佳搜索源 |
+
+### .archive/
+
+仅作参考，不再维护。完整列表见目录结构。
 
 ## 开发
 

@@ -36,7 +36,7 @@ description: 从多个数据源收集用户活动轨迹 → 分析并区分工�
 使用 `worklog` 技能的提取脚本，**extract.py 现已自动包含 pi agent 数据源**：
 
 ```bash
-uv run ~/personal_code/skills/worklog/scripts/extract.py --since today
+uv run --script scripts/extract.py --since today
 ```
 
 输出包含今日所有 OpenCode、Qwen Code 和 Pi Agent 会话。Pi Agent 会话标记 `(pi)` 前缀，包含工作目录、用户提问序列和工具调用摘要。
@@ -314,5 +314,5 @@ MAIL_EOF
 | Qwen Code 对话 | `~/.qwen/projects/*/chats/*.jsonl` |
 | Hermes 会话 | `session_search` 工具 |
 | Kami 字体 | `~/.hermes/skills/kami/assets/fonts/` |
-| Worklog 脚本 | `~/personal_code/skills/worklog/scripts/extract.py` |
+| Worklog 脚本 | `scripts/extract.py`（从技能目录运行） |
 | Pi Agent 会话 | `~/.pi/agent/sessions/*/*.jsonl` |

@@ -1,11 +1,11 @@
 ---
 name: cnife-skills-repo
-description: Guide to managing and optimizing skills in the CNife/skills repository — quality gates, creation/publishing workflow, and the sub-agent verification loop for automated skill auditing and repair. Use when working with ~/personal_code/skills/, adding or modifying skills, running bulk operations across skills, or when the user mentions skill quality, verification, or repo maintenance.
+description: Guide to managing and optimizing skills in the CNife/skills repository — quality gates, creation/publishing workflow, and the sub-agent verification loop for automated skill auditing and repair. Use when working with this repository, adding or modifying skills, running bulk operations across skills, or when the user mentions skill quality, verification, or repo maintenance.
 ---
 
 # CNife Skills Repository
 
-Personal skills repository at `~/personal_code/skills/`, published to `github.com/CNife/skills`. Skills live at the repo root under `<name>/` and serve multiple agents (Hermes, OpenCode, Claude Code, etc.) via `bunx skills add`.
+Personal skills repository published to `github.com/CNife/skills`. Skills are organized by category under `<category>/<name>/` and are installed via `bunx skills add CNife/skills@<name>`.
 
 ```text
 <skill-name>/
@@ -32,7 +32,7 @@ All Python scripts use PEP 723 inline metadata:
 Run before commit:
 
 ```bash
-cd ~/personal_code/skills
+cd <repo-root>
 uv run ruff check --fix .
 uv run ruff format .
 ```
@@ -144,7 +144,7 @@ Pass a clear context to the sub-agent listing what to check:
 from hermes_tools import delegate_task
 
 result = delegate_task(
-    goal="Scan all skills in ~/personal_code/skills/ and report issues",
+    goal="Scan all skills in the repository and report issues",
     context="""Check each skill for:
 1. SKILL.md has valid frontmatter (name + description)
 2. Python scripts in scripts/ have PEP 723 headers
