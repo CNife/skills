@@ -27,6 +27,15 @@ The workflow can be customized via these parameters in the skill invocation:
 - `commit_msg`: Optional. Custom commit message. If omitted, auto-generated from changed file list.
 - `skip_confirm`: Optional. If `true`, skip the confirmation prompt for local changes (auto-commit). Default: `false`.
 
+## Compatibility
+
+| Dependency | Required | Notes |
+|-----------|----------|-------|
+| `chezmoi` | ✅ | Source state must be a git repo with remote `origin` |
+| `git` | ✅ | Bundled with chezmoi — commands go through `chezmoi git --` |
+| `bash` | ✅ | All workflow steps are shell commands |
+| `stat` / `date` / `grep` | ✅ | Used in conflict analysis for file-level inspection |
+
 ## Workflow
 
 ### Step 0: Enter chezmoi source directory
@@ -266,27 +275,42 @@ fi
 
 ### Step 4: Confirm and commit
 
-Ask the user whether to commit and push. If user declines, skip to Step 5 to show current state (changes remain local).
+Check `skip_confirm` parameter:
+
+- If `true` → skip confirmation, auto-commit
+- If `false` or unset → ask user whether to commit and push. If user declines, skip to Step 5.
+
+Check `commit_msg` parameter:
+
+- If provided → use it as the commit message
+- If omitted → auto-generate from changed file list
 
 ```bash
-# Ask user whether to commit and push
-echo ""
-echo "是否提交并推送这些变更到远程？(y/n)"
-# Agent: wait for user response
-
-# If user says yes:
-chezmoi git -- add -A
-
-# Auto-generate commit message
-changed_files=$(chezmoi git -- diff --cached --name-only | head -20)
-if [ $(chezmoi git -- diff --cached --name-only | wc -l) -gt 20 ]; then
-  commit_msg="sync: 同步 $(chezmoi git -- diff --cached --name-only | wc -l) 个 dotfiles 变更"
-else
-  commit_msg="sync: $(echo "$changed_files" | tr '\n' ' ')"
+# Check whether to ask for confirmation
+if [ "$skip_confirm" != "true" ]; then
+  echo ""
+  echo "是否提交并推送这些变更到远程？(y/n)"
+  # Agent: wait for user response
+  # If user says no → skip to Step 5
 fi
 
-echo "提交信息: $commit_msg"
-chezmoi git -- commit -m "$commit_msg"
+chezmoi git -- add -A
+
+# Commit message: custom or auto-generated
+if [ -n "$commit_msg" ]; then
+  echo "提交信息: $commit_msg"
+  chezmoi git -- commit -m "$commit_msg"
+else
+  changed_files=$(chezmoi git -- diff --cached --name-only | head -20)
+  if [ $(chezmoi git -- diff --cached --name-only | wc -l) -gt 20 ]; then
+    msg="sync: 同步 $(chezmoi git -- diff --cached --name-only | wc -l) 个 dotfiles 变更"
+  else
+    msg="sync: $(echo "$changed_files" | tr '\n' ' ')"
+  fi
+  echo "提交信息: $msg"
+  chezmoi git -- commit -m "$msg"
+fi
+
 echo "✅ 提交成功: $(chezmoi git -- rev-parse --short HEAD)"
 
 chezmoi git -- push origin main
