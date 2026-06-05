@@ -291,16 +291,22 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
 
 
 def render_markdown(packages: list[PiPackage]) -> None:
-    """Render trending packages as a Markdown table (LLM-friendly)."""
+    """Render trending packages as a Markdown table (LLM-friendly).
+
+    The description column contains the raw English description from npm.
+    When presenting to the user, the AI SHALL translate each description
+    into Chinese and simplify it to ≤20 characters for readability.
+    """
     today = _today_str()
 
     lines = [f"# 🔥 Pi Agent 最新热门包 ({today})"]
-    lines.append("| # | 包名 | 类型 | 作者 | 周下载 | 趋势分 |")
-    lines.append("|---|---|---|---|---|---|")
+    lines.append("| # | 包名 | 作者 | 趋势分 | 一句话介绍 |")
+    lines.append("|---|---|---|---|---|")
     for rank, pkg in enumerate(packages, 1):
+        desc = pkg.description if pkg.description else "（未提供描述）"
         lines.append(
-            f"| {rank} | `{pkg.name}` | {pkg.pkg_type} | {pkg.author} "
-            f"| {pkg.weekly:,} | {pkg.score:,.0f} |"
+            f"| {rank} | `{pkg.name}` | {pkg.author} "
+            f"| {pkg.score:,.0f} | {desc} |"
         )
     lines.append(f"\n> Top {len(packages)} · 更新于 {today} · 数据: npm registry")
 
