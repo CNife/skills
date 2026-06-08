@@ -1,5 +1,5 @@
 # /// script
-# dependencies = ["typer>=0.12"]
+# dependencies = ["typer>=0.12", "ruamel.yaml>=0.18"]
 # ///
 
 """
@@ -15,15 +15,20 @@ Usage:
     uv run --script scripts/chezmoi-sync.py verify    # 最终验证
     uv run --script scripts/chezmoi-sync.py fetch     # git fetch 远程
     uv run --script scripts/chezmoi-sync.py pull      # git pull（含冲突处理）
+    uv run --script scripts/chezmoi-sync.py data-diff # modify_ 管理字段对比
+    uv run --script scripts/chezmoi-sync.py data-sync # 同步 home → .chezmoidata.yaml
 """
 
+import json
 import os
 import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import typer
+from ruamel.yaml import YAML
 
 app = typer.Typer(name="chezmoi-sync", no_args_is_help=True, help="dotfiles 同步核心操作")
 
@@ -90,6 +95,91 @@ def _entry(emoji: str, label: str, value: str = "") -> str:
     if value:
         return f"{emoji} {label}: {value}"
     return f"{emoji} {label}"
+
+
+# ── Data helpers (for modify_ template management) ─────────────────────────
+
+
+def _get_nested(data: dict, path: str) -> Any:
+    """获取嵌套字典值，支持点号分隔路径"""
+    keys = path.split(".")
+    current = data
+    for key in keys:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        else:
+            return None
+    return current
+
+
+def _set_nested(data: dict, path: str, value: Any) -> dict:
+    """设置嵌套字典值，支持点号分隔路径"""
+    keys = path.split(".")
+    current = data
+    for key in keys[:-1]:
+        if key not in current:
+            current[key] = {}
+        current = current[key]
+    current[keys[-1]] = value
+    return data
+
+
+def _load_json(path: Path) -> dict:
+    """读取 JSON 文件"""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_yaml(path: Path) -> dict:
+    """读取 YAML 文件（保留格式信息）"""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    return yaml.load(path.read_text(encoding="utf-8")) or {}
+
+
+def _save_yaml(path: Path, data: dict) -> None:
+    """写入 YAML 文件（保留注释和格式）"""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.dump(data, path.open("w", encoding="utf-8"))
+
+
+# 内置 modify_ 映射（fallback，当 .chezmoidata.yaml 中无 pi.modify_entries 时使用）
+_BUILTIN_MANIFEST = [
+    {
+        "target": ".pi/agent/settings.json",
+        "data_root": "pi.settings",
+        "managed_paths": [
+            "compaction",
+            "doubleEscapeAction",
+            "enabledModels",
+            "followUpMode",
+            "hideThinkingBlock",
+            "images",
+            "lastChangelogVersion",
+            "packages",
+            "session",
+            "steeringMode",
+            "terminal",
+            "theme",
+            "transport",
+            "treeFilterMode",
+            "warnings",
+        ],
+        "ignored_paths": ["defaultModel", "defaultProvider", "defaultThinkingLevel"],
+    }
+]
+
+
+def _load_manifest(data_path: Path) -> list[dict]:
+    """加载 modify_ 映射配置，优先从 .chezmoidata.yaml 读取，fallback 到内置"""
+    try:
+        data = _load_yaml(data_path)
+        entries = _get_nested(data, "pi.modify_entries")
+        if entries and isinstance(entries, list):
+            return entries
+    except Exception:
+        pass
+    return _BUILTIN_MANIFEST
 
 
 # ── Subcommands ─────────────────────────────────────────────────────────────
@@ -364,13 +454,17 @@ def re_add(
         print("__re_add_count=0")
         return
 
-    # 解析目标文件
+    # 解析目标文件，跳过删除条目
     targets = []
     for line in status_lines:
         # 格式: "MM .config/xxx/yyy.json"
         parts = line.strip().split(None, 1)
         if len(parts) == 2:
+            status_prefix = parts[0]
             fp = parts[1]
+            # 跳过删除条目（如 .chezmoiremove）
+            if "D" in status_prefix:
+                continue
             if paths:
                 if fp in paths:
                     targets.append(fp)
@@ -481,7 +575,7 @@ def re_add(
 
 @app.command()
 def commit(msg: str | None = typer.Option(None, "--message", "-m", help="自定义提交信息")) -> None:
-    """📝 add + commit，自动生成提交信息"""
+    """📝 add + commit，自动生成提交信息（非交互模式自动提交）"""
     src = _source_path()
     os.chdir(src)
 
@@ -498,6 +592,7 @@ def commit(msg: str | None = typer.Option(None, "--message", "-m", help="自定�
     # 生成提交信息
     if msg:
         commit_msg = msg
+        files = []  # --message 时不需要列出文件
     else:
         changed_files = _chz_git("diff", "--cached", "--name-only")
         files = [f for f in changed_files.stdout.strip().split("\n") if f]
@@ -508,13 +603,12 @@ def commit(msg: str | None = typer.Option(None, "--message", "-m", help="自定�
 
     print(_header("提交"))
     print(f"  信息: {commit_msg}")
-    print(f"  文件 ({len(files) if not msg else '?'}):")
-    if not msg:
+    if files:
+        print(f"  文件 ({len(files)}):")
         for f in files:
             print(f"    {f}")
 
-    typer.confirm("  确认提交？", default=True, abort=True)
-
+    # 直接提交（非交互，用户确认在技能流程中）
     r = _chz_git("commit", "-m", commit_msg)
     if r.returncode == 0:
         print(_entry("✅", f"提交成功: {commit_msg}"))
@@ -547,6 +641,149 @@ def push() -> None:
 
 
 @app.command()
+def data_diff() -> None:
+    """📊 modify_ 管理字段对比：home JSON vs .chezmoidata.yaml"""
+    src = _source_path()
+    source_root = Path(src)
+    data_path = source_root / ".chezmoidata.yaml"
+
+    if not data_path.exists():
+        print(_entry("⚠️", ".chezmoidata.yaml 不存在"))
+        print("__has_data_changes=0")
+        return
+
+    manifest = _load_manifest(data_path)
+    data_yaml = _load_yaml(data_path)
+
+    all_diffs = []
+
+    for entry in manifest:
+        target = entry["target"]
+        data_root = entry["data_root"]
+        managed_paths = entry.get("managed_paths", [])
+        ignored_paths = entry.get("ignored_paths", [])
+
+        home_path = Path.home() / target
+        if not home_path.exists():
+            continue
+
+        home_json = _load_json(home_path)
+        data_values = _get_nested(data_yaml, data_root) or {}
+
+        print(_header(f"{target} vs {data_root}"))
+
+        entry_diffs = []
+        for path in managed_paths:
+            home_val = _get_nested(home_json, path)
+            data_val = _get_nested(data_values, path)
+            if home_val != data_val:
+                entry_diffs.append(
+                    {
+                        "target": target,
+                        "data_root": data_root,
+                        "path": path,
+                        "home": home_val,
+                        "data": data_val,
+                    }
+                )
+                print(f"  📝 {path}:")
+                print(f"     home: {json.dumps(home_val, ensure_ascii=False)[:80]}")
+                print(f"     data: {json.dumps(data_val, ensure_ascii=False)[:80]}")
+
+        if not entry_diffs:
+            print(_entry("✅", "管理字段一致"))
+
+        all_diffs.extend(entry_diffs)
+
+        # 报告忽略的字段差异（仅信息展示）
+        ignored_diffs = []
+        for path in ignored_paths:
+            home_val = _get_nested(home_json, path)
+            data_val = _get_nested(data_values, path)
+            if home_val != data_val:
+                ignored_diffs.append(path)
+
+        if ignored_diffs:
+            print(f"  [i] 忽略字段有差异（本地专属）: {', '.join(ignored_diffs)}")
+
+    # 汇总
+    has_changes = 1 if all_diffs else 0
+    diff_paths = " ".join(d["path"] for d in all_diffs)
+
+    print(f"\n__has_data_changes={has_changes}")
+    if diff_paths:
+        print(f"__data_diff_paths={diff_paths}")
+
+    if has_changes:
+        raise typer.Exit(EXIT_HAS_CHANGES)
+
+
+@app.command()
+def data_sync() -> None:
+    """🔄 同步 home → .chezmoidata.yaml：更新管理字段（非交互）"""
+    src = _source_path()
+    source_root = Path(src)
+    data_path = source_root / ".chezmoidata.yaml"
+
+    if not data_path.exists():
+        typer.secho("❌ .chezmoidata.yaml 不存在", err=True, fg=typer.colors.RED)
+        raise typer.Exit(EXIT_ERROR)
+
+    manifest = _load_manifest(data_path)
+    data_yaml = _load_yaml(data_path)
+
+    updates = []
+
+    for entry in manifest:
+        target = entry["target"]
+        data_root = entry["data_root"]
+        managed_paths = entry.get("managed_paths", [])
+
+        home_path = Path.home() / target
+        if not home_path.exists():
+            continue
+
+        home_json = _load_json(home_path)
+        data_values = _get_nested(data_yaml, data_root) or {}
+
+        for path in managed_paths:
+            home_val = _get_nested(home_json, path)
+            data_val = _get_nested(data_values, path)
+            if home_val != data_val:
+                updates.append(
+                    {
+                        "target": target,
+                        "data_root": data_root,
+                        "path": path,
+                        "home": home_val,
+                        "data": data_val,
+                    }
+                )
+
+    if not updates:
+        print(_entry("✅", "无需更新"))
+        print("__data_sync_count=0")
+        return
+
+    # 展示待更新内容
+    print(_header("待更新字段"))
+    for u in updates:
+        print(f"  📝 {u['path']}:")
+        print(f"     home: {json.dumps(u['home'], ensure_ascii=False)[:80]}")
+        print(f"     data: {json.dumps(u['data'], ensure_ascii=False)[:80]}")
+
+    # 直接执行更新（非交互，用户确认在技能流程中）
+    for u in updates:
+        full_path = u["data_root"] + "." + u["path"]
+        _set_nested(data_yaml, full_path, u["home"])
+
+    _save_yaml(data_path, data_yaml)
+
+    print(_entry("✅", f"已同步 {len(updates)} 个字段"))
+    print(f"\n__data_sync_count={len(updates)}")
+
+
+@app.command()
 def verify() -> None:
     """🔍 最终状态验证：确认本地 ↔ 远程一致"""
     src = _source_path()
@@ -565,6 +802,16 @@ def verify() -> None:
     else:
         print(_entry("⚠️", "本地与远程不同步"))
         print("__synced=0")
+
+    # chezmoi diff 检查
+    print(_header("chezmoi diff 检查"))
+    diff_r = _chz("diff")
+    if diff_r.stdout.strip():
+        print(_entry("⚠️", "chezmoi diff 非空 — home 与源不一致"))
+        print("__chezmoi_dirty=1")
+    else:
+        print(_entry("✅", "chezmoi diff 空 — home 与源一致"))
+        print("__chezmoi_dirty=0")
 
     print(_header("最近提交"))
     log_r = _chz_git("log", "--oneline", "-5")

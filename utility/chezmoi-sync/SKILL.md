@@ -58,19 +58,19 @@ description: >-
 ## 技能参数
 
 - `commit_msg`: 自定义提交信息。省略时由脚本自动生成。
-- `skip_confirm`: `true` 时跳过提交前确认。默认 `false`。
 
 ## 工作流
 
 ```text
 阶段 A：拉取远程       阶段 B：检测 + re-add        阶段 C：提交推送
 ─────────────────     ────────────────────      ──────────────────
-Step 1: fetch          Step 3: chezmoi status    Step 6: commit
-Step 2: pull（可选）    Step 4: diff 展示         Step 7: push
-                        Step 5: smart re-add     Step 8: verify
+Step 1: fetch          Step 3: 状态检测          Step 7: commit
+Step 2: pull（可选）    Step 4: diff 展示         Step 8: push
+                        Step 5: smart re-add     Step 9: verify
+                        Step 6: data-sync
 ```
 
-每阶段独立快走——无远程变更跳过 A，无 chezmoi 差异跳过 B，无 git 变更跳过 C。
+每阶段独立快走——无远程变更跳过 A，无差异跳过 B，无 git 变更跳过 C。
 
 ---
 
@@ -113,13 +113,21 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" pull
 
 ---
 
-### Step 3：双层级状态检测
+### Step 3：三层状态检测
 
 ```bash
+# Layer 1 & 2: git status + chezmoi status
 uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" status
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
   exit "$rc"
+fi
+
+# Layer 3: modify_ 管理字段对比
+uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" data-diff
+data_rc=$?
+if [ "$data_rc" -ne 0 ] && [ "$data_rc" -ne 2 ]; then
+  exit "$data_rc"
 fi
 ```
 
@@ -128,9 +136,11 @@ fi
 捕获输出标记：
 
 - `__has_git_changes=1` → 源仓库有未提交变更
-- `__has_chezmoi_changes=1` → home 与源有差异
+- `__has_chezmoi_changes=1` → home 与源有差异（普通文件）
+- `__has_data_changes=1` → modify_ 管理字段有差异
+- `__data_diff_paths=...` → 有差异的字段名列表
 
-**快速路径 B**：两者都为 0 → 跳过 Step 4–5，进入 Step 6。
+**快速路径 B**：三者都为 0 → 跳过 Step 4–6，进入 Step 7。
 
 ---
 
@@ -181,7 +191,29 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" re-add .config/xxx --direct
 
 ---
 
-### Step 6：Commit
+### Step 6：Data Sync（modify_ 管理字段同步）
+
+仅当 `__has_data_changes=1` 时执行。
+
+```bash
+# Step 6a: 展示差异详情
+uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" data-diff
+
+# Step 6b: 询问用户是否同步（在技能流程中）
+# Step 6c: 确认后执行：
+uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" data-sync
+```
+
+**工作流程**：
+
+1. 运行 `data-diff` 展示差异字段
+2. 询问用户：是否同步到 `.chezmoidata.yaml`？
+3. 确认后运行 `data-sync`（脚本直接执行，无二次确认）
+4. 忽略的字段（本地专属）不会被同步
+
+---
+
+### Step 7：Commit
 
 仅在 `__has_git_changes=1` 或上一步产生了变更时执行。
 
@@ -189,7 +221,8 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" re-add .config/xxx --direct
 uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" commit --message "自定义信息"
 ```
 
-省略 `--message` 时脚本自动生成提交信息并交互式确认。
+- `--message` 省略时自动生成提交信息
+- 脚本直接执行，用户确认在技能流程中
 
 提交信息规则：
 
@@ -200,7 +233,7 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" commit --message "自定义
 
 ---
 
-### Step 7：Push
+### Step 8：Push
 
 ```bash
 uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" push
@@ -208,11 +241,17 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" push
 
 ---
 
-### Step 8：最终验证
+### Step 9：最终验证
 
 ```bash
 uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" verify
 ```
+
+验证输出标记：
+
+- `__synced=1` → 本地 ↔ 远程 git 一致
+- `__chezmoi_dirty=0` → chezmoi diff 为空，home 与源一致
+- `__chezmoi_dirty=1` → chezmoi diff 非空，home 与源不一致（需关注）
 
 ---
 
@@ -229,6 +268,7 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" verify
 | 冲突自动解决失败 | 输出 `__needs_user`，逐文件询问 |
 | push 被拒（远程有更新） | 停止，提示先拉再推 |
 | re-add 失败 | 显示错误，不影响后续流程 |
+| data-sync 失败 | 显示错误，提示手动编辑 `.chezmoidata.yaml` |
 
 ## 安全规则
 
@@ -240,3 +280,4 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" verify
 6. **autostash 安全** — 本地变更在 pull 后自动恢复
 7. **冲突解决偏好本地** — 时间戳不明确时偏向保留本地变更
 8. **`private_` 重命名正常处理** — 权限变化导致的前缀变更，commit 自动处理 git rm + git add
+9. **data-sync 需确认** — 同步管理字段到 `.chezmoidata.yaml` 前必须展示差异并询问用户
