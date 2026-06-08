@@ -19,43 +19,37 @@ Usage:
 
 import os
 import subprocess
-import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 import typer
 
-app = typer.Typer(
-    name="chezmoi-sync",
-    no_args_is_help=True,
-    help="dotfiles 同步核心操作",
-)
+app = typer.Typer(name="chezmoi-sync", no_args_is_help=True, help="dotfiles 同步核心操作")
 
 # ── Error codes ────────────────────────────────────────────────────────────
 EXIT_CLEAN = 0
 EXIT_HAS_CHANGES = 2  # 有变更（非错误，但需要处理）
-EXIT_ERROR = 1        # 真正错误
+EXIT_ERROR = 1  # 真正错误
+
+RE_ADD_PATHS = typer.Argument(
+    None,
+    help="要 re-add 的文件路径（chezmoi 目标路径，如 .config/rpiv-pi/models.json）。默认所有有差异的文件",
+)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
+
 def _chz(*args: str, check: bool = False) -> subprocess.CompletedProcess:
     """执行 chezmoi 命令"""
-    return subprocess.run(
-        ["chezmoi", *args],
-        capture_output=True, text=True,
-        check=check,
-    )
+    return subprocess.run(["chezmoi", *args], capture_output=True, text=True, check=check)
 
 
 def _chz_git(*args: str, check: bool = False) -> subprocess.CompletedProcess:
     """执行 chezmoi git -- <args>"""
     return subprocess.run(
-        ["chezmoi", "git", "--", *args],
-        capture_output=True, text=True,
-        check=check,
+        ["chezmoi", "git", "--", *args], capture_output=True, text=True, check=check
     )
 
 
@@ -65,9 +59,22 @@ def _source_path() -> str:
     return r.stdout.strip()
 
 
+def _source_rel_path_for_target(target: Path, source_root: Path) -> str | None:
+    """通过 chezmoi 获取 target 对应的 source 相对路径。"""
+    r = _chz("source-path", str(target))
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+
+    source_path = Path(r.stdout.strip())
+    try:
+        return str(source_path.relative_to(source_root))
+    except ValueError:
+        return None
+
+
 def _fmt_dt(ts: int) -> str:
-    """Unix 时间戳 → 可读字符串"""
-    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+    """Unix 时间戳 → 本地时区可读字符串"""
+    return datetime.fromtimestamp(ts, tz=UTC).astimezone().strftime("%Y-%m-%d %H:%M %z")
 
 
 def _bold(s: str) -> str:
@@ -86,6 +93,7 @@ def _entry(emoji: str, label: str, value: str = "") -> str:
 
 
 # ── Subcommands ─────────────────────────────────────────────────────────────
+
 
 @app.command()
 def fetch() -> None:
@@ -149,7 +157,7 @@ def pull() -> None:
 
     if not conflicted:
         typer.secho("  未检测到冲突文件，可能是 rebase 失败的其他原因", err=True)
-        print(f"\n__pull_ok=0")
+        print("\n__pull_ok=0")
         print(f"__pull_error={r.stderr.strip()}")
         return
 
@@ -173,7 +181,7 @@ def pull() -> None:
         # 冲突块预览
         conflict_text = fpath.read_text()
         for line in conflict_text.split("\n"):
-            if line.startswith("<<<<<<<") or line.startswith("=======") or line.startswith(">>>>>>>"):
+            if line.startswith(("<<<<<<<", "=======", ">>>>>>>")):
                 print(f"     {line[:60]}")
 
         # 启发式判断
@@ -202,7 +210,7 @@ def pull() -> None:
             needs_user.append(fp)
 
     if auto_resolved:
-        print(f"\n🟢 自动解决:")
+        print("\n🟢 自动解决:")
         for item in auto_resolved:
             print(f"  {item}")
 
@@ -230,7 +238,7 @@ def status() -> None:
 
     print(_header("层 1：源仓库 git 状态"))
     git_st = _chz_git("status", "--porcelain")
-    git_changes = [l for l in git_st.stdout.strip().split("\n") if l.strip()]
+    git_changes = [line for line in git_st.stdout.strip().split("\n") if line.strip()]
 
     if git_changes:
         print(f"📝 {len(git_changes)} 个文件待提交:")
@@ -245,7 +253,7 @@ def status() -> None:
 
     print(_header("层 2：chezmoi 状态（源 vs home 差异）"))
     chz_st = _chz("status")
-    chz_lines = [l for l in chz_st.stdout.strip().split("\n") if l.strip()]
+    chz_lines = [line for line in chz_st.stdout.strip().split("\n") if line.strip()]
 
     if chz_lines:
         print(f"📝 {len(chz_lines)} 个文件有差异:")
@@ -266,14 +274,16 @@ def status() -> None:
 
 @app.command()
 def diff() -> None:
-    """📋 展示 chezmoi diff 摘要（源 vs home）"""
+    """📋 展示 chezmoi diff 摘要（home vs target）"""
     r = _chz("diff")
     if not r.stdout.strip():
         print(_entry("✅", "源与 home 完全一致"))
         return
 
     lines = r.stdout.strip().split("\n")
-    print(_header("chezmoi diff（源 → home）"))
+    print(_header("chezmoi diff（home/destination → source target）"))
+    print("  方向: - 当前 home/destination，+ 源生成的 target（apply 后内容）")
+    print("  提示: 使用 --reverse 时 +/- 方向相反；本脚本未使用 --reverse")
 
     # 提取文件级变更摘要
     files = {}
@@ -320,23 +330,34 @@ def diff() -> None:
 
 @app.command()
 def re_add(
-    paths: Optional[list[str]] = typer.Argument(
+    paths: list[str] | None = RE_ADD_PATHS,
+    direction: str | None = typer.Option(
         None,
-        help="要 re-add 的文件路径（chezmoi 目标路径，如 .config/rpiv-pi/models.json）。默认所有有差异的文件",
-    ),
-    direction: Optional[str] = typer.Option(
-        None,
-        "--direction", "-d",
-        help="强制指定方向: home（home→源，即 re-add）/ source（源→home，即 apply）",
+        "--direction",
+        "-d",
+        help="强制指定方向: home（home→源，即 re-add）/ source（源→home，仅允许单目标 apply）",
     ),
 ) -> None:
     """📥 智能 re-add：检测差异、比较时间戳、自动或标记需确认"""
     src = _source_path()
+    source_root = Path(src)
     os.chdir(src)
+
+    if direction not in (None, "home", "source"):
+        typer.secho("❌ --direction 只支持 home 或 source", err=True, fg=typer.colors.RED)
+        raise typer.Exit(EXIT_ERROR)
+
+    if direction == "source" and len(paths or []) != 1:
+        typer.secho(
+            "❌ --direction source 必须显式指定且只指定一个目标路径，避免全量 apply",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(EXIT_ERROR)
 
     # 获取 chezmoi status
     st_r = _chz("status")
-    status_lines = [l for l in st_r.stdout.strip().split("\n") if l.strip()]
+    status_lines = [line for line in st_r.stdout.strip().split("\n") if line.strip()]
 
     if not status_lines:
         print(_entry("✅", "无差异，无需 re-add"))
@@ -376,32 +397,18 @@ def re_add(
         home_mtime = home_path.stat().st_mtime
 
         # 源仓库中该文件的最近提交时间
-        commit_r = _chz_git("log", "-1", "--format=%ct", "HEAD", "--", f"dot_{fp.replace('/', '/')}")
-        # 试一下可能的源路径变体
-        src_path_variants = [
-            f"dot_{fp.replace('/', '/')}",
-            f"dot_{fp.rsplit('/', 1)[0] if '/' in fp else ''}/private_{fp.rsplit('/', 1)[-1] if '/' in fp else f'private_{fp}'}",
-        ]
-
+        source_rel_path = _source_rel_path_for_target(home_path, source_root)
         source_commit_ts = 0
-        for sp in src_path_variants[:1]:  # 先用标准路径
-            cr = _chz_git("log", "-1", "--format=%ct", "HEAD", "--", sp)
+        if source_rel_path:
+            cr = _chz_git("log", "-1", "--format=%ct", "HEAD", "--", source_rel_path)
             if cr.stdout.strip():
                 source_commit_ts = int(cr.stdout.strip())
-                break
-
-        # 如果没找到源路径，在 git ls-files 中查找
-        if source_commit_ts == 0:
-            ls_r = _chz_git("ls-files", "--", f"*{fp.split('/')[-1]}")
-            matched = [l for l in ls_r.stdout.strip().split("\n") if l]
-            if matched:
-                cr = _chz_git("log", "-1", "--format=%ct", "HEAD", "--", matched[0])
-                if cr.stdout.strip():
-                    source_commit_ts = int(cr.stdout.strip())
 
         home_mtime_hr = _fmt_dt(int(home_mtime))
         source_ts_hr = _fmt_dt(source_commit_ts) if source_commit_ts > 0 else "N/A"
 
+        if source_rel_path:
+            print(f"     源仓库路径:    {source_rel_path}")
         print(f"     home mtime:    {home_mtime_hr}")
         print(f"     源仓库提交:    {source_ts_hr}")
 
@@ -410,15 +417,15 @@ def re_add(
             r = _chz("re-add", str(home_path))
             if r.returncode == 0:
                 auto_re_add.append(fp)
-                print(f"     ✅ re-add 完成（强制）")
+                print("     ✅ re-add 完成（强制）")
             else:
                 print(f"     ❌ re-add 失败: {r.stderr.strip()}")
         elif direction == "source":
-            # 强制 apply
-            r = _chz("apply")
+            # 强制 apply，仅限用户显式确认的单个 target
+            r = _chz("apply", str(home_path))
             if r.returncode == 0:
                 applied.append(fp)
-                print(f"     ⚠️  apply 完成（强制 — 源覆盖 home）")
+                print("     ⚠️  apply 完成（强制 — 源覆盖 home，仅此文件）")
             else:
                 print(f"     ❌ apply 失败: {r.stderr.strip()}")
         elif source_commit_ts == 0:
@@ -426,7 +433,7 @@ def re_add(
             r = _chz("re-add", str(home_path))
             if r.returncode == 0:
                 auto_re_add.append(fp)
-                print(f"     ✅ re-add 完成（新文件，自动）")
+                print("     ✅ re-add 完成（新文件，自动）")
             else:
                 print(f"     ❌ re-add 失败: {r.stderr.strip()}")
         elif home_mtime > source_commit_ts:
@@ -434,14 +441,17 @@ def re_add(
             r = _chz("re-add", str(home_path))
             if r.returncode == 0:
                 auto_re_add.append(fp)
-                print(f"     ✅ re-add 完成（home 更新）")
+                print("     ✅ re-add 完成（home 更新）")
             else:
                 print(f"     ❌ re-add 失败: {r.stderr.strip()}")
         else:
             # 源更新 → 需要决策
             needs_decision.append(fp)
-            print(f"     🤔 源比 home 新，需确认方向")
-            print(f"     选项: apply（源→home）| re-add（home→源）")
+            print("     🤔 源比 home 新，需确认方向")
+            print("     diff 语义: - 当前 home，+ 源生成的 target/apply 后内容")
+            print("     选项: apply（源→home）| re-add（home→源）")
+            print(f"     命令: re-add {fp} --direction source  # 单文件 apply")
+            print(f"     命令: re-add {fp} --direction home    # 单文件 re-add")
 
     # 报告
     if auto_re_add:
@@ -459,6 +469,7 @@ def re_add(
         for f in needs_decision:
             print(f"  🤔 {f}")
         print("\n  请在 SKILL.md 流程中询问用户：apply（源→home）还是 re-add（home→源）？")
+        print("  注意：apply 必须带单个目标路径，禁止无路径全量 apply。")
 
     print(f"\n__re_add_done={len(auto_re_add)}")
     print(f"__applied={len(applied)}")
@@ -469,9 +480,7 @@ def re_add(
 
 
 @app.command()
-def commit(
-    msg: Optional[str] = typer.Option(None, "--message", "-m", help="自定义提交信息"),
-) -> None:
+def commit(msg: str | None = typer.Option(None, "--message", "-m", help="自定义提交信息")) -> None:
     """📝 add + commit，自动生成提交信息"""
     src = _source_path()
     os.chdir(src)
@@ -509,11 +518,11 @@ def commit(
     r = _chz_git("commit", "-m", commit_msg)
     if r.returncode == 0:
         print(_entry("✅", f"提交成功: {commit_msg}"))
-        print(f"\n__committed=1")
+        print("\n__committed=1")
         print(f"__commit_msg={commit_msg}")
     else:
         typer.secho(f"❌ 提交失败:\n{r.stderr}", err=True, fg=typer.colors.RED)
-        print(f"\n__committed=0")
+        print("\n__committed=0")
         print(f"__commit_error={r.stderr.strip()}")
         raise typer.Exit(EXIT_ERROR)
 

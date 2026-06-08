@@ -34,12 +34,14 @@ description: >-
 | `chezmoi re-add` | home → 源 | 🟢 安全 | 写入 git 仓库，`git checkout` 可还原，**自动执行** |
 | `chezmoi apply` | 源 → home | 🔴 危险 | 覆盖 home 文件，**无撤销机制，必须人工确认** |
 
-**需要询问用户的场景：**
+### 需要询问用户的场景
+
 - 源比 home 新时（时间戳分析不确定方向）→ 展示差异，问用户选 apply 还是 re-add
 - 提交前展示变更摘要 → 确认后再 commit
 - apply（源→home）→ **永不自动执行**，红线
 
-**自动执行的场景：**
+#### 自动执行的场景
+
 - git pull / git fetch — 远程 ↔ 源，全程可回滚
 - chezmoi re-add（home 更新时）— 写入 git，可还原
 - git push — 推送已提交的变更
@@ -60,7 +62,7 @@ description: >-
 
 ## 工作流
 
-```
+```text
 阶段 A：拉取远程       阶段 B：检测 + re-add        阶段 C：提交推送
 ─────────────────     ────────────────────      ──────────────────
 Step 1: fetch          Step 3: chezmoi status    Step 6: commit
@@ -114,10 +116,17 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" pull
 ### Step 3：双层级状态检测
 
 ```bash
-uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" status || true
+uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" status
+rc=$?
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+  exit "$rc"
+fi
 ```
 
+`rc=2` 表示有变更需处理，不是真错误；其他非零退出码必须停止。
+
 捕获输出标记：
+
 - `__has_git_changes=1` → 源仓库有未提交变更
 - `__has_chezmoi_changes=1` → home 与源有差异
 
@@ -133,6 +142,8 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" status || true
 uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" diff
 ```
 
+阅读 diff 时按 chezmoi 默认方向理解：`-` 是当前 home/destination，`+` 是源生成的 target（apply 后内容）。只有显式使用 `--reverse` 时方向才相反；本脚本不使用 `--reverse`。
+
 ---
 
 ### Step 5：智能 re-add
@@ -141,17 +152,26 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" diff
 
 ```bash
 uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" re-add
+rc=$?
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+  exit "$rc"
+fi
 ```
 
-**脚本自动处理：**
-1. 对每个有差异的文件，比较 home mtime 与源仓库提交时间
+`rc=2` 表示存在 `__needs_decision`，agent 继续按下方流程询问用户。
+
+#### 脚本自动处理
+
+1. 对每个有差异的文件，比较 home mtime 与源仓库提交时间（以本机时区 + offset 展示）
 2. home 更新 → 自动 `chezmoi re-add`（安全方向，有 git 兜底）
 3. 源更新或不可比 → 输出 `__needs_decision`，由 agent 询问用户
 
-**re-add 后的文件重命名**：chezmoi 会根据文件权限自动添加 `private_` 前缀。git 状态可能显示旧文件删除 + 新文件添加——这是正常行为，commit 会自动包含。
+**`private_` 文件重命名**：chezmoi 会根据文件权限添加 `private_` 前缀。无论这是 re-add 产生的本地变更，还是 pull 引入的远程重命名，git 状态都可能显示旧文件删除 + 新文件添加——这是正常行为，commit 会自动包含。
 
 **当 `__needs_decision` 非空时：**
+
 - 展示差异，问用户：apply（源→home，⚠️ 覆盖）还是 re-add（home→源，✅ 安全）
+- `--direction source` 必须带且只带一个目标路径；脚本会拒绝无路径或多路径 apply，避免全量覆盖
 - 用户选择后，用 `--direction` 重新执行：
 
 ```bash
@@ -172,6 +192,7 @@ uv run --script "$SKILL_DIR/scripts/chezmoi-sync.py" commit --message "自定义
 省略 `--message` 时脚本自动生成提交信息并交互式确认。
 
 提交信息规则：
+
 - 文件数 ≤20 → 列出文件名
 - 文件数 >20 → `sync：更新 N 个 dotfiles`
 
