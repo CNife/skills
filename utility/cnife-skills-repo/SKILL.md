@@ -181,3 +181,62 @@ Use a fresh sub-agent instance to avoid stale context biasing the verification.
 | 3 consecutive rounds without reduction | Abort loop, report blockers to user |
 | All issues resolved | Final commit, push, done |
 | Partial resolution + user decides remaining are acceptable | Commit partial, note remaining as known issues |
+
+## Single-Skill Optimization Loop
+
+对单个技能做迭代优化时，使用测试→审查→反思→优化的循环，而非一次性改完。
+
+### The Loop
+
+```text
+  ┌─ 1. 在干净上下文中启动 subagent 测试技能
+  │
+  ├─ 2. 审查 subagent 的工作路径
+  │      ├── 消息：prompt 是否够自包含？
+  │      ├── 思考：subagent 是否理解了任务？
+  │      ├── 工具调用：有没有冗余或报错？
+  │      └── 错误：哪一步出问题了？
+  │
+  ├─ 3. 评估技能效果，确定改进方向
+  │      ├── 结果正确吗？
+  │      ├── 路径直接简洁吗？
+  │      └── 还有没有可优化的？
+  │
+  ├─ 4. 优化技能（改 SKILL.md / 加脚本）
+  │
+  └─ 回到 1，直到路径足够直接简洁
+```
+
+### Prompt 设计原则
+
+Worker subagent 的 prompt 必须**自包含**——给全执行步骤和命令，不要让它第一手读 SKILL.md。
+
+```text
+# 好的 prompt：步骤写死，不需要额外读文件
+操作步骤：
+1. 检查缓存是否存在，不存在则下载
+2. 运行查询命令
+3. 返回结果
+
+# 差的 prompt：只给意图，subagent 得自己读 SKILL.md 找命令
+查一下 openai 的模型
+```
+
+### 审查关注点
+
+| 关注点 | 怎么看 |
+|--------|--------|
+| **消息** | subagent 的 prompt 完整吗？还是需要额外追问？ |
+| **思考** | subagent 理解了任务意图吗？还是理解偏了？ |
+| **工具调用** | 有没有冗余的读文件？能不能合并 bash 调用？ |
+| **错误** | 命令报错过吗？字段路径对不对？ |
+| **路径长度** | 能否用更少的 tool calls 完成同样的事？ |
+
+### 停止条件
+
+循环终止于 **路径足够直接简洁**。标志：
+
+- subagent 的 tool calls 无明显冗余
+- prompt 自包含，subagent 不需要额外读 SKILL.md
+- 结果正确，不需要二次修正
+- 审查时找不到明显可优化的点
