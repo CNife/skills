@@ -80,15 +80,6 @@ def compute_paths(vault_cfg: dict, date: datetime | None = None) -> dict:
     }
 
 
-def _read_rules() -> str:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    ref_file = os.path.join(script_dir, "..", "references", "diary-rules.md")
-    if os.path.exists(ref_file):
-        with open(ref_file, encoding="utf-8") as f:
-            return f.read().strip()
-    return ""
-
-
 def _scan_todos(cfg: dict, days: int = 14) -> list[dict]:
     base = cfg["base"]
     diary_base = f"{base}/{cfg['diary_dir']}"
@@ -160,12 +151,6 @@ def main():
     print(f"DIARY_PATH={today}")
     print(f"DIARY_EXISTS={'true' if exists else 'false'}")
     print(f"DATE={paths['date']}")
-
-    # 2. 格式规则
-    rules = _read_rules()
-    if rules:
-        print("\n--- RULES ---")
-        print(rules)
 
     # 3. 未完成待办
     todos = _scan_todos(cfg)

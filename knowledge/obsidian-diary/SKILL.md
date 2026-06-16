@@ -95,10 +95,9 @@ description: 将会话内容总结并写入 Obsidian 工作日志或个人日记
 uv run --script scripts/obsidian-helper.py --vault <work|personal>
 ```
 
-输出包含五个段落，一次拿齐：
+输出包含四个段落，一次拿齐：
 
 - **路径信息**：DIARY_PATH、DIARY_EXISTS、DATE
-- **RULES**：对应变体的格式规则
 - **TODOS**：近期未完成待办（14 天）
 - **RECENT**：最近 2-3 篇日记的前 30 行摘要
 - **TODAY**：今日日记全文
@@ -133,10 +132,9 @@ uv run --script scripts/obsidian-helper.py --vault <work|personal>
 uv run --script scripts/obsidian-helper.py --vault <变体>
 ```
 
-输出包含五个段落，一次拿齐：
+输出包含四个段落，一次拿齐：
 
 - **路径信息**：DIARY_PATH、DIARY_EXISTS、DATE
-- **RULES**：对应变体的格式规则（自动从 references 文件读取）
 - **TODOS**：近期未完成待办（14 天）
 - **RECENT**：最近 2-3 篇日记的前 30 行摘要（了解近期上下文和写作风格）
 - **TODAY**：今日日记全文
