@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -146,6 +147,16 @@ def main():
     paths = compute_paths(cfg)
     today = paths["diary_path"]
     exists = os.path.exists(today)
+
+    # 自动创建：日记不存在时从模板复制
+    if not exists:
+        if os.path.exists(paths["template_path"]):
+            os.makedirs(paths["month_dir"], exist_ok=True)
+            shutil.copy2(paths["template_path"], today)
+            exists = True
+        else:
+            print(f"ERROR: Template not found: {paths['template_path']}", file=sys.stderr)
+            sys.exit(1)
 
     # 1. 路径信息
     print(f"DIARY_PATH={today}")

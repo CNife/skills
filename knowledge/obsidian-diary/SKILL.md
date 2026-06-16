@@ -139,7 +139,7 @@ uv run --script scripts/obsidian-helper.py --vault <变体>
 - **RECENT**：最近 2-3 篇日记的前 30 行摘要（了解近期上下文和写作风格）
 - **TODAY**：今日日记全文
 
-如果 `DIARY_EXISTS=false`，脚本输出 `(empty)`，AI 应告知用户今日日记不存在（首次使用需创建模板后运行）。
+如果 `DIARY_EXISTS=false`，脚本会自动从模板创建后再读取。
 
 ### 步骤 2：主题识别与聚合（最重要的步骤）
 
