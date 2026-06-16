@@ -58,9 +58,7 @@ description: 将会话内容总结并写入 Obsidian 工作日志或个人日记
 
 当脚本输出 `CONFIG_MISSING=true` 时，执行以下流程：
 
-1. **询问用户**每个 vault 的 Obsidian 根目录（本地绝对路径），例如：
-   - work vault：`/mnt/c/Obsidian`
-   - personal vault：`/mnt/c/Obsidian`
+1. **询问用户**每个 vault 的 Obsidian 根目录（本地绝对路径）
 2. 其余字段（`diary_dir`、`template`、`exclude_meta`）使用默认值，除非用户明确要求修改
 3. 用 Write 工具创建配置文件（先确保目录存在）：
 
@@ -94,13 +92,6 @@ description: 将会话内容总结并写入 Obsidian 工作日志或个人日记
 ```bash
 uv run --script scripts/obsidian-helper.py --vault <work|personal>
 ```
-
-输出包含四个段落，一次拿齐：
-
-- **路径信息**：DIARY_PATH、DATE
-- **TODOS**：近期未完成待办（14 天）
-- **RECENT**：最近 2-3 篇日记的前 30 行摘要
-- **TODAY**：今日日记全文
 
 ## 注意事项（必须先读）
 
@@ -159,7 +150,7 @@ uv run --script scripts/obsidian-helper.py --vault <变体>
 | CouchDB 架构评估 / 阿里云部署 / 踩坑记录 / 客户端配置 | **Obsidian 同步方案部署** | 都属于"LiveSync + CouchDB 落地" |
 | Git 备份 / Hermes SMB 备份 / cron 一览 | **基础设施配置** | 都属于"备份和自动化" |
 
-## 合并规则：
+#### 合并规则
 
 - 同一主题域的多个事件合并为 1 个 `# 标题`，其下用子 bullet 展开
 - 每个子 bullet 1-2 行，只写结论和关键数据，不要展开细节
