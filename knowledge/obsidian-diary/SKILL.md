@@ -97,14 +97,14 @@ uv run --script scripts/obsidian-helper.py --vault <work|personal>
 
 输出包含四个段落，一次拿齐：
 
-- **路径信息**：DIARY_PATH、DIARY_EXISTS、DATE
+- **路径信息**：DIARY_PATH、DATE
 - **TODOS**：近期未完成待办（14 天）
 - **RECENT**：最近 2-3 篇日记的前 30 行摘要
 - **TODAY**：今日日记全文
 
 ## 注意事项（必须先读）
 
-- **必须加载本 skill 后才能写日记**。直接 write_file/patch 会绕过 context 步骤，丢失 DIARY_EXISTS 状态，极可能覆盖已有内容。
+- **必须加载本 skill 后才能写日记**。
 - **先读后写**：即使今天日记已存在，也要先运行脚本获取当日全文，用 patch 追加而非 write_file 覆盖。
 
 ## 主动检查与询问
@@ -134,12 +134,12 @@ uv run --script scripts/obsidian-helper.py --vault <变体>
 
 输出包含四个段落，一次拿齐：
 
-- **路径信息**：DIARY_PATH、DIARY_EXISTS、DATE
+- **路径信息**：DIARY_PATH、DATE
 - **TODOS**：近期未完成待办（14 天）
 - **RECENT**：最近 2-3 篇日记的前 30 行摘要（了解近期上下文和写作风格）
 - **TODAY**：今日日记全文
 
-如果 `DIARY_EXISTS=false`，脚本会自动从模板创建后再读取。
+日记不存在时脚本会自动从模板创建。
 
 ### 步骤 2：主题识别与聚合（最重要的步骤）
 

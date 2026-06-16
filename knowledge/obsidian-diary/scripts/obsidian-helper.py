@@ -160,7 +160,6 @@ def main():
 
     # 1. 路径信息
     print(f"DIARY_PATH={today}")
-    print(f"DIARY_EXISTS={'true' if exists else 'false'}")
     print(f"DATE={paths['date']}")
 
     # 3. 未完成待办
