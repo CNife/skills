@@ -275,9 +275,7 @@ def _scan_recent(cfg: dict, days: int = 10, limit: int = 3) -> list[tuple]:
 
 def _read_rules(vault_name: str) -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    ref_file = os.path.join(script_dir, "..", "references", f"{vault_name}-log.md")
-    if not os.path.exists(ref_file):
-        ref_file = os.path.join(script_dir, "..", "references", f"{vault_name}-diary.md")
+    ref_file = os.path.join(script_dir, "..", "references", "diary-rules.md")
     if os.path.exists(ref_file):
         with open(ref_file, encoding="utf-8") as f:
             return f.read().strip()
