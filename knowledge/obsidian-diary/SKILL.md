@@ -27,7 +27,7 @@ description: 将会话内容总结并写入 Obsidian 工作日志或个人日记
 
 简而言之：`{日记目录}/YYYY/MM/YYYY年M月D日星期X.md`。详细对照表和常见错误见 `references/diary-rules.md`。
 
-**陷阱：用 write_file 直接写平级路径会创建错误位置的文件。先用 `locate` action 获取正确路径。**
+**陷阱：用 write_file 直接写平级路径会创建错误位置的文件。先用 `uv run --script scripts/obsidian-helper.py --vault <变体>` 查看 DIARY_PATH 后再写入。**
 
 ## 变体选择
 
@@ -92,22 +92,21 @@ description: 将会话内容总结并写入 Obsidian 工作日志或个人日记
 **必须使用 uv 运行**（自动管理依赖）：
 
 ```bash
-uv run --script scripts/obsidian-helper.py --vault <work|personal> --action <action>
+uv run --script scripts/obsidian-helper.py --vault <work|personal>
 ```
 
-可用 action：
+输出包含五个段落，一次拿齐：
 
-- `context` — 一次调用返回所有上下文（路径 + 规则 + 待办 + 近期摘要 + 今日日记大纲）
-- `locate` — 获取今日日记路径、模板路径、存在状态
-- `create` — 确保今日日记存在，不存在则从模板创建
-- `todos` — 扫描近期日志，列出未完成待办
-- `recent` — 列出近期修改的日志文件（支持 `--limit N` 限制数量）
-- `read` — 读取指定文件或今日日记
+- **路径信息**：DIARY_PATH、DIARY_EXISTS、DATE
+- **RULES**：对应变体的格式规则
+- **TODOS**：近期未完成待办（14 天）
+- **RECENT**：最近 2-3 篇日记的前 30 行摘要
+- **TODAY**：今日日记全文
 
 ## 注意事项（必须先读）
 
 - **必须加载本 skill 后才能写日记**。直接 write_file/patch 会绕过 context 步骤，丢失 DIARY_EXISTS 状态，极可能覆盖已有内容。
-- **先读后写**：即使今天日记已存在，也要先 `context` 获取当日内容摘要和大纲，用 patch 追加而非 write_file 覆盖。
+- **先读后写**：即使今天日记已存在，也要先运行脚本获取当日全文，用 patch 追加而非 write_file 覆盖。
 
 ## 主动检查与询问
 
@@ -131,7 +130,7 @@ uv run --script scripts/obsidian-helper.py --vault <work|personal> --action <act
 ### 步骤 1：收集上下文（1 次调用）
 
 ```bash
-uv run --script scripts/obsidian-helper.py --vault <变体> --action context
+uv run --script scripts/obsidian-helper.py --vault <变体>
 ```
 
 输出包含五个段落，一次拿齐：
@@ -140,9 +139,9 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 - **RULES**：对应变体的格式规则（自动从 references 文件读取）
 - **TODOS**：近期未完成待办（14 天）
 - **RECENT**：最近 2-3 篇日记的前 30 行摘要（了解近期上下文和写作风格）
-- **TODAY**：今日日记完整内容，含大纲和内容摘要
+- **TODAY**：今日日记全文
 
-如果 `DIARY_EXISTS=false`，脚本会自动从模板创建后再读取。
+如果 `DIARY_EXISTS=false`，脚本输出 `(empty)`，AI 应告知用户今日日记不存在（首次使用需创建模板后运行）。
 
 ### 步骤 2：主题识别与聚合（最重要的步骤）
 
@@ -168,7 +167,7 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 - 每个子 bullet 1-2 行，只写结论和关键数据，不要展开细节
 - 明显不同域的事件不能硬塞在一起（daisy 技能本身是金融研究的一部分，但 CouchDB 部署就不是）
 
-### 2c. 检查今日日记大纲（来自步骤 1 的 `## 大纲`）
+### 2c. 检查今日日记已有内容（来自步骤 1 的 TODAY 输出）
 
 **新内容能塞进已有章节的，不新开一段。** 例如今天继续做投资分析，而日记里已经有 `# 金融研究` 段落，就在那个段落追加新 bullet，不要另起 `# 金融研究（续）`。
 
@@ -205,12 +204,11 @@ uv run --script scripts/obsidian-helper.py --vault <变体> --action context
 示例：
 
 ```text
-# context 输出显示：
-## 大纲
-6: # Genos Reg Server
-8: ## 生产环境故障排查与修复
-17: ## IGV 可视化 Access forbidden 修复
-24: # OneReason Backend
+# context 输出显示今日日记已有章节：
+# Genos Reg Server
+## 生产环境故障排查与修复
+## IGV 可视化 Access forbidden 修复
+# OneReason Backend
 
 # 新内容（Genos 部署记录）的第 6 行后有 # Genos Reg Server，应在第 17 行之前插入
 # 新主题如 # CouchDB 同步部署 → 在文件末尾追加
