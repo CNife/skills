@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import sys
 import time
 import urllib.error
@@ -30,6 +31,7 @@ from typing import Any
 NPM_SEARCH = "https://registry.npmjs.org/-/v1/search"
 NPM_DOWNLOADS = "https://api.npmjs.org/downloads"
 SEARCH_PAGE_SIZE = 250
+RISING_MIN_WEEKLY = 200  # 新锐榜候选池最低周下载门槛
 
 # Type keywords (in order of precedence)
 TYPE_KEYWORDS: dict[str, list[str]] = {
@@ -92,10 +94,10 @@ def _json_get(url: str, timeout: int = 15, retries: int = 3) -> dict[str, Any] |
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                # Rate limited — exponential backoff: 1s, 2s, 4s
+                # Rate limited — exponential backoff with random jitter
                 if attempt == retries - 1:
                     return None
-                time.sleep(2**attempt)
+                time.sleep(2**attempt + random.random())
             else:
                 if attempt == retries - 1:
                     return None
@@ -245,12 +247,12 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
         time.sleep(0.1)
 
     # Fetch scoped packages individually
-    _vlog(f"  逐一获取 {len(scoped)} 个有作用域包 (15 线程并行)...")
+    _vlog(f"  逐一获取 {len(scoped)} 个有作用域包 (8 线程并行)...")
     scoped_urls = []
     for _, p in scoped:
         scoped_urls.append(f"{range_url}/{_urlencode_pkg(p.name)}")
 
-    scoped_responses = _json_get_bulk(scoped_urls, max_workers=15, timeout=15)
+    scoped_responses = _json_get_bulk(scoped_urls, max_workers=8, timeout=15)
     success = 0
     for (idx, _p), resp in zip(scoped, scoped_responses, strict=True):
         if resp and isinstance(resp, dict) and "error" not in resp and "downloads" in resp:
@@ -422,17 +424,25 @@ def main() -> None:
     # ── Phase 2: mainstream list (from search API data, zero extra cost) ──
     mainstream = sorted(candidates, key=lambda p: p.weekly, reverse=True)[:mainstream_max]
 
-    # ── Phase 3: fetch download range data for rising list ──
+    # ── Phase 3: filter rising candidate pool by min weekly threshold ──
+    rising_candidates = [p for p in candidates if p.weekly >= RISING_MIN_WEEKLY]
+    dropped = len(candidates) - len(rising_candidates)
+    if dropped:
+        _vlog(
+            f"新锐候选池过滤: {len(candidates)} → {len(rising_candidates)} (过滤 {dropped} 个低下载包)"
+        )
+
+    # ── Phase 4: fetch download range data for rising list ──
     try:
-        candidates = _fetch_range_data(candidates)
+        rising_candidates = _fetch_range_data(rising_candidates)
     except RuntimeError as e:
         _warn(str(e))
         sys.exit(1)
 
-    # ── Phase 4: rising list (from range API data) ──
-    rising = sorted(candidates, key=lambda p: p.score, reverse=True)[:rising_max]
+    # ── Phase 5: rising list (from range API data) ──
+    rising = sorted(rising_candidates, key=lambda p: p.score, reverse=True)[:rising_max]
 
-    # ── Phase 5: output ──
+    # ── Phase 6: output ──
     if args.json:
         render_json(mainstream, rising)
     else:
