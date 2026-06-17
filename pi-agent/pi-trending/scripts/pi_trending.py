@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 import urllib.error
@@ -29,8 +30,6 @@ from typing import Any
 NPM_SEARCH = "https://registry.npmjs.org/-/v1/search"
 NPM_DOWNLOADS = "https://api.npmjs.org/downloads"
 SEARCH_PAGE_SIZE = 250
-MAX_SEARCH_PAGES = 6
-TRENDING_SMOOTHING = 100  # prevent division-by-zero for new packages
 
 # Type keywords (in order of precedence)
 TYPE_KEYWORDS: dict[str, list[str]] = {
@@ -79,28 +78,44 @@ def _urlencode_pkg(name: str) -> str:
     return name.replace("@", "%40").replace("/", "%2F")
 
 
-def _json_get(url: str, timeout: int = 15) -> dict[str, Any] | list | None:
-    """GET a JSON endpoint with retries."""
-    for attempt in range(3):
+def _json_get(url: str, timeout: int = 15, retries: int = 3) -> dict[str, Any] | list | None:
+    """GET a JSON endpoint with retries.
+
+    HTTP 429 (rate limited) gets longer exponential backoff.
+    Other failures use linear backoff.
+    """
+    for attempt in range(retries):
         try:
             req = urllib.request.Request(url)
             req.add_header("Accept", "application/json")
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # Rate limited — exponential backoff: 1s, 2s, 4s
+                if attempt == retries - 1:
+                    return None
+                time.sleep(2**attempt)
+            else:
+                if attempt == retries - 1:
+                    return None
+                time.sleep(0.5 * (attempt + 1))
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
-            if attempt == 2:
+            if attempt == retries - 1:
                 return None
             time.sleep(0.5 * (attempt + 1))
     return None
 
 
-def _json_get_bulk(urls: list[str], max_workers: int = 8) -> list[dict[str, Any] | None]:
+def _json_get_bulk(
+    urls: list[str], max_workers: int = 8, timeout: int = 15
+) -> list[dict[str, Any] | None]:
     """Fetch multiple URLs in parallel."""
     results: list[dict[str, Any] | None] = [None] * len(urls)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {}
         for i, url in enumerate(urls):
-            futures[pool.submit(_json_get, url)] = i
+            futures[pool.submit(_json_get, url, timeout)] = i
         for future in as_completed(futures):
             idx = futures[future]
             try:
@@ -139,18 +154,18 @@ def _get_author(pkg: dict) -> str:
 # ── Fetch phase 1: search API ────────────────────────────────────────────────
 
 
-def fetch_top_packages(need: int) -> list[PiPackage]:
-    """Fetch top N pi packages by weekly downloads.
+def fetch_top_packages(max_pages: int = 2) -> list[PiPackage]:
+    """Fetch pi packages from npm search API, sorted by popularity.
 
-    逐页获取 npm search API 结果，收集到至少 need 个包后停止。
+    按周下载量降序采集 pi 包，最多取 max_pages 页。
     """
     all_pkgs: list[PiPackage] = []
     total = 0
     page = 0
 
-    while True:
+    while page < max_pages:
         offset = page * SEARCH_PAGE_SIZE
-        url = f"{NPM_SEARCH}?text=keywords:pi-package&size={SEARCH_PAGE_SIZE}&from={offset}"
+        url = f"{NPM_SEARCH}?text=keywords:pi-package&size={SEARCH_PAGE_SIZE}&from={offset}&sort=popularity"
         data = _json_get(url)
         if data is None:
             _warn(f"搜索 API 第 {page + 1} 页请求失败，终止")
@@ -162,7 +177,7 @@ def fetch_top_packages(need: int) -> list[PiPackage]:
 
         if page == 0:
             total = data.get("total", 0)
-            _vlog(f"npm 搜索到 {total} 个 pi 包，正在获取数据...")
+            _vlog(f"npm 搜索到 {total} 个 pi 包 (sort=popularity)")
 
         for obj in objects:
             p = obj.get("package", {})
@@ -176,33 +191,12 @@ def fetch_top_packages(need: int) -> list[PiPackage]:
             )
             all_pkgs.append(pkg)
 
-        # Sort by weekly downloads descending after each page
-        all_pkgs.sort(key=lambda p: p.weekly, reverse=True)
-        current_top_n = all_pkgs[:need]
-
-        _vlog(
-            f"  第 {page + 1} 页: {len(objects)} 个包 (累计 {len(all_pkgs)}，top {need} 最低周下载 {current_top_n[-1].weekly:,})"
-        )
-
-        # Stop condition: we have enough candidates AND
-        # the highest weekly on this new page is lower than
-        # our current #need-th candidate (meaning no new page can overtake)
-        if len(all_pkgs) >= need:
-            page_max_weekly = max(obj.get("downloads", {}).get("weekly", 0) for obj in objects)
-            need_th_weekly = current_top_n[-1].weekly
-            if page_max_weekly < need_th_weekly:
-                _vlog(
-                    f"  ✓ top {need} 候选包已确定 (第 {page + 2} 页最高周下载 {page_max_weekly} < 候选门槛 {need_th_weekly})"
-                )
-                break
-
-        # Safety: limit pages even if convergence hasn't happened
-        if page >= MAX_SEARCH_PAGES - 1:
-            break
-
+        _vlog(f"  第 {page + 1} 页: {len(objects)} 个包 (累计 {len(all_pkgs)})")
         page += 1
 
-    return all_pkgs[:need]
+    # Sort by weekly downloads descending for mainstream list
+    all_pkgs.sort(key=lambda p: p.weekly, reverse=True)
+    return all_pkgs
 
 
 # ── Fetch phase 2: download range data ───────────────────────────────────────
@@ -238,22 +232,36 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
         names_comma = ",".join(p.name for _, p in batch)
         url = f"{range_url}/{names_comma}"
         data = _json_get(url)
-        if data and isinstance(data, dict) and "error" not in data:
-            for idx, p in batch:
-                if p.name in data:
-                    results[idx] = data[p.name]
-        # Brief pause to avoid rate limiting
+        if not data or not isinstance(data, dict) or "error" in data:
+            names = [p.name for _, p in batch]
+            first = ", ".join(names[:5])
+            raise RuntimeError(
+                f"批量获取下载数据失败 ({len(names)} 个包): {first}{'…' if len(names) > 5 else ''}"
+            )
+        for idx, p in batch:
+            if p.name in data:
+                results[idx] = data[p.name]
+        _vlog(f"  批量 {_batch_idx + 1}/{len(unscoped_batches)}: {len(batch)} 个包")
         time.sleep(0.1)
 
     # Fetch scoped packages individually
+    _vlog(f"  逐一获取 {len(scoped)} 个有作用域包 (15 线程并行)...")
     scoped_urls = []
     for _, p in scoped:
         scoped_urls.append(f"{range_url}/{_urlencode_pkg(p.name)}")
 
-    scoped_responses = _json_get_bulk(scoped_urls, max_workers=5)
+    scoped_responses = _json_get_bulk(scoped_urls, max_workers=15, timeout=15)
+    success = 0
     for (idx, _p), resp in zip(scoped, scoped_responses, strict=True):
         if resp and isinstance(resp, dict) and "error" not in resp and "downloads" in resp:
             results[idx] = resp
+            success += 1
+    if success < len(scoped):
+        _vlog(
+            f"  有作用域包完成: {success}/{len(scoped)} 成功 ({len(scoped) - success} 个被限流跳过，不影响主流榜)"
+        )
+    else:
+        _vlog(f"  有作用域包完成: {success}/{len(scoped)} 成功")
 
     # Calculate trending scores
     for i, pkg in enumerate(packages):
@@ -278,11 +286,8 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
 
         pkg.this_week = this_week
         pkg.prev_week = prev_week
-        pkg.score = (
-            (this_week**2) / (prev_week + TRENDING_SMOOTHING)
-            if (prev_week + TRENDING_SMOOTHING) > 0
-            else 0.0
-        )
+        delta = max(0, this_week - prev_week)
+        pkg.score = math.log1p(this_week) * delta / (prev_week + 10)
 
     return packages
 
@@ -290,8 +295,8 @@ def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
 # ── Output ────────────────────────────────────────────────────────────────────
 
 
-def render_markdown(packages: list[PiPackage]) -> None:
-    """Render trending packages as a Markdown table (LLM-friendly).
+def render_markdown(mainstream: list[PiPackage], rising: list[PiPackage]) -> None:
+    """Render two Markdown tables: mainstream (by weekly downloads) and rising (by growth score).
 
     The description column contains the raw English description from npm.
     When presenting to the user, the AI SHALL translate each description
@@ -300,25 +305,49 @@ def render_markdown(packages: list[PiPackage]) -> None:
     today = _today_str()
 
     lines = [f"# 🔥 Pi Agent 最新热门包 ({today})"]
+
+    # Mainstream table
+    lines.append("\n## 主流榜")
+    lines.append("| # | 包名 | 作者 | 本周下载量 | 一句话介绍 |")
+    lines.append("|---|---|---|---|---|")
+    for rank, pkg in enumerate(mainstream, 1):
+        desc = pkg.description if pkg.description else "（未提供描述）"
+        lines.append(f"| {rank} | `{pkg.name}` | {pkg.author} | {pkg.weekly:,} | {desc} |")
+    lines.append(f"\n> Top {len(mainstream)} · 按本周下载量排序")
+
+    # Rising table
+    lines.append("\n## 新锐榜")
     lines.append("| # | 包名 | 作者 | 趋势分 | 一句话介绍 |")
     lines.append("|---|---|---|---|---|")
-    for rank, pkg in enumerate(packages, 1):
+    for rank, pkg in enumerate(rising, 1):
         desc = pkg.description if pkg.description else "（未提供描述）"
-        lines.append(
-            f"| {rank} | `{pkg.name}` | {pkg.author} "
-            f"| {pkg.score:,.0f} | {desc} |"
-        )
-    lines.append(f"\n> Top {len(packages)} · 更新于 {today} · 数据: npm registry")
+        lines.append(f"| {rank} | `{pkg.name}` | {pkg.author} | {pkg.score:,.0f} | {desc} |")
+    lines.append(f"\n> Top {len(rising)} · 更新于 {today} · 数据: npm registry")
 
     print("\n".join(lines))
 
 
-def render_json(packages: list[PiPackage]) -> None:
-    """Render trending packages as JSON."""
+def render_json(mainstream: list[PiPackage], rising: list[PiPackage]) -> None:
+    """Render dual-list trending packages as JSON."""
     output = []
-    for pkg in packages:
+    for pkg in mainstream:
         output.append(
             {
+                "list_type": "mainstream",
+                "name": pkg.name,
+                "type": pkg.pkg_type,
+                "author": pkg.author,
+                "weekly_downloads": pkg.weekly,
+                "trending_score": None,
+                "this_week": None,
+                "prev_week": None,
+                "description": pkg.description,
+            }
+        )
+    for pkg in rising:
+        output.append(
+            {
+                "list_type": "rising",
                 "name": pkg.name,
                 "type": pkg.pkg_type,
                 "author": pkg.author,
@@ -348,7 +377,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
   pi-trending.py --json                   # JSON 格式输出
         """,
     )
-    parser.add_argument("--max", type=int, default=20, help="显示前 N 个结果 (默认 20)")
+    parser.add_argument(
+        "--max", type=int, default=20, help="同时设置主流榜和新锐榜的显示条数 (默认 20)"
+    )
+    parser.add_argument(
+        "--mainstream-max", type=int, default=None, help="主流榜显示条数 (默认同 --max)"
+    )
+    parser.add_argument(
+        "--rising-max", type=int, default=None, help="新锐榜显示条数 (默认同 --max)"
+    )
     parser.add_argument(
         "--type",
         dest="pkg_type",
@@ -368,37 +405,38 @@ def main() -> None:
     global VERBOSE
     VERBOSE = args.verbose
 
-    # ── Phase 1: fetch top candidates (3x max for trending computation) ──
-    max_candidates = args.max * 3
-    candidates = fetch_top_packages(max_candidates)
+    # Determine per-list counts from args
+    mainstream_max = args.mainstream_max if args.mainstream_max is not None else args.max
+    rising_max = args.rising_max if args.rising_max is not None else args.max
+
+    # ── Phase 1: fetch candidate pool (fixed 2 pages, sort=popularity) ──
+    candidates = fetch_top_packages(max_pages=2)
     if not candidates:
         _warn("未获取到任何 pi 包，请检查网络")
         sys.exit(1)
 
-    # ── Phase 3: fetch download range data for candidates ──
-    candidates = _fetch_range_data(candidates)
-
-    # ── Phase 4: filter, sort, truncate ──
+    # Apply type filter to shared pool before list splitting
     if args.pkg_type != "all":
         candidates = [p for p in candidates if p.pkg_type == args.pkg_type]
 
-    candidates.sort(key=lambda p: p.score, reverse=True)
-    results = candidates[: args.max]
+    # ── Phase 2: mainstream list (from search API data, zero extra cost) ──
+    mainstream = sorted(candidates, key=lambda p: p.weekly, reverse=True)[:mainstream_max]
+
+    # ── Phase 3: fetch download range data for rising list ──
+    try:
+        candidates = _fetch_range_data(candidates)
+    except RuntimeError as e:
+        _warn(str(e))
+        sys.exit(1)
+
+    # ── Phase 4: rising list (from range API data) ──
+    rising = sorted(candidates, key=lambda p: p.score, reverse=True)[:rising_max]
 
     # ── Phase 5: output ──
-    if not results:
-        msg = (
-            f"未找到类型为 '{args.pkg_type}' 的 trending 包"
-            if args.pkg_type != "all"
-            else "未找到 trending 包"
-        )
-        _warn(msg)
-        sys.exit(0)
-
     if args.json:
-        render_json(results)
+        render_json(mainstream, rising)
     else:
-        render_markdown(results)
+        render_markdown(mainstream, rising)
 
 
 if __name__ == "__main__":
