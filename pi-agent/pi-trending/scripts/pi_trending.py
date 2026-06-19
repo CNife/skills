@@ -8,7 +8,9 @@
 pi-trending — 发现 Pi Agent 生态中最近最火的包。
 
 数据源：npm registry (pi 包本质是含 pi-package keyword 的 npm 包)
-算法：trending_score = this_week² / (prev_week + 100)
+榜单：
+- 主流榜 — 按月下载量 (monthly) 倒排，反映近 30 天最常用的包
+- 新锐榜 — 按增速评分 (growth x ln(weekly+1)) 倒排，反映最近在上升的包
 """
 
 from __future__ import annotations
@@ -21,17 +23,15 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
 NPM_SEARCH = "https://registry.npmjs.org/-/v1/search"
-NPM_DOWNLOADS = "https://api.npmjs.org/downloads"
 SEARCH_PAGE_SIZE = 250
-RISING_MIN_WEEKLY = 200  # 新锐榜候选池最低周下载门槛
+RISING_MIN_WEEKLY = 100  # 新锐榜候选池最低周下载门槛
 
 # Type keywords (in order of precedence)
 TYPE_KEYWORDS: dict[str, list[str]] = {
@@ -66,18 +66,15 @@ class PiPackage:
     description: str
     author: str
     weekly: int
+    monthly: int
     pkg_type: str
     score: float = 0.0
-    this_week: int = 0  # downloads last 7 days
-    prev_week: int = 0  # downloads previous 7 days
 
 
 # ── Network helpers ──────────────────────────────────────────────────────────
 
 
-def _urlencode_pkg(name: str) -> str:
-    """URL-encode a package name for npm API (handles scoped packages)."""
-    return name.replace("@", "%40").replace("/", "%2F")
+
 
 
 def _json_get(url: str, timeout: int = 15, retries: int = 3) -> dict[str, Any] | list | None:
@@ -109,22 +106,7 @@ def _json_get(url: str, timeout: int = 15, retries: int = 3) -> dict[str, Any] |
     return None
 
 
-def _json_get_bulk(
-    urls: list[str], max_workers: int = 8, timeout: int = 15
-) -> list[dict[str, Any] | None]:
-    """Fetch multiple URLs in parallel."""
-    results: list[dict[str, Any] | None] = [None] * len(urls)
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {}
-        for i, url in enumerate(urls):
-            futures[pool.submit(_json_get, url, timeout)] = i
-        for future in as_completed(futures):
-            idx = futures[future]
-            try:
-                results[idx] = future.result()
-            except Exception:
-                results[idx] = None
-    return results
+
 
 
 # ── Determine package type ────────────────────────────────────────────────────
@@ -189,6 +171,7 @@ def fetch_top_packages(max_pages: int = 2) -> list[PiPackage]:
                 description=p.get("description", ""),
                 author=_get_author(p),
                 weekly=dl.get("weekly", 0),
+                monthly=dl.get("monthly", 0),
                 pkg_type=_determine_type(p.get("keywords")),
             )
             all_pkgs.append(pkg)
@@ -196,102 +179,37 @@ def fetch_top_packages(max_pages: int = 2) -> list[PiPackage]:
         _vlog(f"  第 {page + 1} 页: {len(objects)} 个包 (累计 {len(all_pkgs)})")
         page += 1
 
-    # Sort by weekly downloads descending for mainstream list
-    all_pkgs.sort(key=lambda p: p.weekly, reverse=True)
+    # Sort by monthly downloads descending for mainstream list
+    all_pkgs.sort(key=lambda p: p.monthly, reverse=True)
     return all_pkgs
 
 
-# ── Fetch phase 2: download range data ───────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _today_str() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
-def _fetch_range_data(packages: list[PiPackage]) -> list[PiPackage]:
-    """Fetch 14-day download range data for candidate packages, update scores."""
-    if not packages:
-        return packages
+# ── Rising score ─────────────────────────────────────────────────────────────
 
-    today = _today_str()
-    fourteen_days_ago = (datetime.now(UTC) - timedelta(days=14)).strftime("%Y-%m-%d")
-    range_url = f"{NPM_DOWNLOADS}/range/{fourteen_days_ago}:{today}"
 
-    _vlog(f"获取 {len(packages)} 个候选包的下载趋势数据...")
+def _rising_score(pkg: PiPackage) -> float:
+    """Growth-baseline-log score using search API data only.
 
-    # Separate scoped and unscoped
-    unscoped = [(i, p) for i, p in enumerate(packages) if not p.name.startswith("@")]
-    scoped = [(i, p) for i, p in enumerate(packages) if p.name.startswith("@")]
-
-    # We'll store results keyed by index
-    results: dict[int, dict] = {}
-
-    # Batch unscoped (max 100 per batch for URL length safety)
-    batch_size = 80
-    unscoped_batches = [unscoped[i : i + batch_size] for i in range(0, len(unscoped), batch_size)]
-
-    for _batch_idx, batch in enumerate(unscoped_batches):
-        names_comma = ",".join(p.name for _, p in batch)
-        url = f"{range_url}/{names_comma}"
-        data = _json_get(url)
-        if not data or not isinstance(data, dict) or "error" in data:
-            names = [p.name for _, p in batch]
-            first = ", ".join(names[:5])
-            raise RuntimeError(
-                f"批量获取下载数据失败 ({len(names)} 个包): {first}{'…' if len(names) > 5 else ''}"
-            )
-        for idx, p in batch:
-            if p.name in data:
-                results[idx] = data[p.name]
-        _vlog(f"  批量 {_batch_idx + 1}/{len(unscoped_batches)}: {len(batch)} 个包")
-        time.sleep(0.1)
-
-    # Fetch scoped packages individually
-    _vlog(f"  逐一获取 {len(scoped)} 个有作用域包 (8 线程并行)...")
-    scoped_urls = []
-    for _, p in scoped:
-        scoped_urls.append(f"{range_url}/{_urlencode_pkg(p.name)}")
-
-    scoped_responses = _json_get_bulk(scoped_urls, max_workers=8, timeout=15)
-    success = 0
-    for (idx, _p), resp in zip(scoped, scoped_responses, strict=True):
-        if resp and isinstance(resp, dict) and "error" not in resp and "downloads" in resp:
-            results[idx] = resp
-            success += 1
-    if success < len(scoped):
-        _vlog(
-            f"  有作用域包完成: {success}/{len(scoped)} 成功 ({len(scoped) - success} 个被限流跳过，不影响主流榜)"
-        )
-    else:
-        _vlog(f"  有作用域包完成: {success}/{len(scoped)} 成功")
-
-    # Calculate trending scores
-    for i, pkg in enumerate(packages):
-        if i not in results:
-            continue
-        days = results[i].get("downloads", [])
-        if not days or len(days) < 7:
-            continue
-
-        # Last 7 days = most recent 7, previous 7 = the 7 before that
-        sorted_days = sorted(days, key=lambda d: d["day"])
-        if len(sorted_days) >= 14:
-            prev_week = sum(d["downloads"] for d in sorted_days[:7])
-            this_week = sum(d["downloads"] for d in sorted_days[7:])
-        elif len(sorted_days) >= 7:
-            # If only 7-13 days of data, still calculate
-            cutoff = len(sorted_days) - 7
-            prev_week = sum(d["downloads"] for d in sorted_days[:cutoff])
-            this_week = sum(d["downloads"] for d in sorted_days[cutoff:])
-        else:
-            continue
-
-        pkg.this_week = this_week
-        pkg.prev_week = prev_week
-        delta = max(0, this_week - prev_week)
-        pkg.score = math.log1p(this_week) * delta / (prev_week + 10)
-
-    return packages
+    recency = weekly / monthly  -> 最近一周在月度总量中的占比
+    stable_baseline = 7 / 30    -> 均匀分布时的基准线
+    growth = (recency - baseline) / (1 - baseline)  -> 归一化到 0~1
+    score = growth * ln(weekly + 1)  -> 增速 x 信誉权重
+    """
+    if pkg.weekly == 0 or pkg.monthly == 0:
+        return 0.0
+    recency = pkg.weekly / pkg.monthly
+    stable_baseline = 7 / 30
+    if recency <= stable_baseline:
+        return 0.0
+    growth = (recency - stable_baseline) / (1 - stable_baseline)
+    return growth * math.log1p(pkg.weekly)
 
 
 # ── Output ────────────────────────────────────────────────────────────────────
@@ -310,12 +228,12 @@ def render_markdown(mainstream: list[PiPackage], rising: list[PiPackage]) -> Non
 
     # Mainstream table
     lines.append("\n## 主流榜")
-    lines.append("| # | 包名 | 作者 | 本周下载量 | 一句话介绍 |")
+    lines.append("| # | 包名 | 作者 | 月下载量 | 一句话介绍 |")
     lines.append("|---|---|---|---|---|")
     for rank, pkg in enumerate(mainstream, 1):
         desc = pkg.description if pkg.description else "（未提供描述）"
-        lines.append(f"| {rank} | `{pkg.name}` | {pkg.author} | {pkg.weekly:,} | {desc} |")
-    lines.append(f"\n> Top {len(mainstream)} · 按本周下载量排序")
+        lines.append(f"| {rank} | `{pkg.name}` | {pkg.author} | {pkg.monthly:,} | {desc} |")
+    lines.append(f"\n> Top {len(mainstream)} · 按月下载量排序")
 
     # Rising table
     lines.append("\n## 新锐榜")
@@ -341,8 +259,6 @@ def render_json(mainstream: list[PiPackage], rising: list[PiPackage]) -> None:
                 "author": pkg.author,
                 "weekly_downloads": pkg.weekly,
                 "trending_score": None,
-                "this_week": None,
-                "prev_week": None,
                 "description": pkg.description,
             }
         )
@@ -355,8 +271,6 @@ def render_json(mainstream: list[PiPackage], rising: list[PiPackage]) -> None:
                 "author": pkg.author,
                 "weekly_downloads": pkg.weekly,
                 "trending_score": round(pkg.score, 1),
-                "this_week": pkg.this_week,
-                "prev_week": pkg.prev_week,
                 "description": pkg.description,
             }
         )
@@ -372,15 +286,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  pi-trending.py                          # 输出 Top 20 Markdown 表格
+  pi-trending.py                          # 输出 Top 30 Markdown 表格
   pi-trending.py --max 10                 # 只显示前 10
   pi-trending.py --type extension         # 只看扩展
   pi-trending.py --verbose                # 显示详细 API 调用日志
   pi-trending.py --json                   # JSON 格式输出
+  pi-trending.py --mainstream-max 5 --rising-max 10  # 分别控制榜单条数
         """,
     )
     parser.add_argument(
-        "--max", type=int, default=20, help="同时设置主流榜和新锐榜的显示条数 (默认 20)"
+        "--max", type=int, default=30, help="同时设置主流榜和新锐榜的显示条数 (默认 30)"
     )
     parser.add_argument(
         "--mainstream-max", type=int, default=None, help="主流榜显示条数 (默认同 --max)"
@@ -421,8 +336,8 @@ def main() -> None:
     if args.pkg_type != "all":
         candidates = [p for p in candidates if p.pkg_type == args.pkg_type]
 
-    # ── Phase 2: mainstream list (from search API data, zero extra cost) ──
-    mainstream = sorted(candidates, key=lambda p: p.weekly, reverse=True)[:mainstream_max]
+    # ── Phase 2: mainstream list (by monthly downloads) ──
+    mainstream = sorted(candidates, key=lambda p: p.monthly, reverse=True)[:mainstream_max]
 
     # ── Phase 3: filter rising candidate pool by min weekly threshold ──
     rising_candidates = [p for p in candidates if p.weekly >= RISING_MIN_WEEKLY]
@@ -432,17 +347,12 @@ def main() -> None:
             f"新锐候选池过滤: {len(candidates)} → {len(rising_candidates)} (过滤 {dropped} 个低下载包)"
         )
 
-    # ── Phase 4: fetch download range data for rising list ──
-    try:
-        rising_candidates = _fetch_range_data(rising_candidates)
-    except RuntimeError as e:
-        _warn(str(e))
-        sys.exit(1)
-
-    # ── Phase 5: rising list (from range API data) ──
+    # ── Phase 4: score rising candidates (search API only) ──
+    for pkg in rising_candidates:
+        pkg.score = _rising_score(pkg)
     rising = sorted(rising_candidates, key=lambda p: p.score, reverse=True)[:rising_max]
 
-    # ── Phase 6: output ──
+    # ── Phase 5: output ──
     if args.json:
         render_json(mainstream, rising)
     else:
