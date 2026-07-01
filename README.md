@@ -67,6 +67,12 @@ bunx skills add CNife/skills@pi-agent/pi-skill-audit --full-depth
 |-------|------|
 | [obsidian-diary](./knowledge/obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
 
+### productivity/
+
+| Skill | 描述 |
+|-------|------|
+| [daily-recap](./productivity/daily-recap) | 整理今日工作内容 — 搜索 Nowledge Mem 线程、检查会话文件、查 git 提交，按主题聚合生成结构化日报，可选写入 Obsidian |
+
 ### utility/
 
 | Skill | 描述 |
