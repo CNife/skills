@@ -1,6 +1,6 @@
 ---
 name: daily-recap
-description: 整理今日工作内容——搜索 Nowledge Mem 记忆/线程、检查 Pi 会话文件、加载线程内容、查 git 提交，按主题合并成结构化日报，可选写入 Obsidian 工作日志。当用户说「整理下今天的工作」「总结今天做了什么」「记录今天的工作」时触发。
+description: 将今天多个会话的 Pi 活动整理成按主题聚合的结构化日报，可选写入 Obsidian 工作日志。
 disable-model-invocation: true
 ---
 
@@ -35,7 +35,9 @@ nmem --json t search "<项目关键词>" -n 5
 ls -lt ~/.pi/agent/sessions/--<项目目录哈希>--/
 ```
 
-筛选今天（当前日期）的文件。将每个文件名中的 UUID 与 Step 1 的线程 ID 匹配：
+筛选今天（当前日期）的文件。文件名中包含 UTC 时间戳（`YYYY-MM-DDTHH-MM-SS-mmmZ`），用 `date -d` 转成本地时间后再使用。
+
+将每个文件名中的 UUID 与 Step 1 的线程 ID 匹配：
 
 - 已匹配 → 该线程已被覆盖
 - 未匹配 → **遗漏的会话**，可能是 `(new)` 前缀或较短的长描述
@@ -56,7 +58,20 @@ nmem --json t show "<thread_id>" --limit 5 --offset 0 --content-limit 1000
 
 **完成标记**：每个遗漏线程至少读到一个可记录的产出，**或**确认该线程无关（非本项目任务）。
 
-### Step 4：检查 Git 提交记录
+### Step 4：记录候选（人工审核关口）
+
+将 Step 1→3 收集的所有线索（记忆、线程产出、git 提交）整理为候选条目表：
+
+| # | 会话/事件 | 项目域 | 建议去向 | 理由 |
+|:-:|-----------|--------|----------|------|
+| 1 | HPC 巡检 | genome-assembly | 工作日志 | 之江实验室日常工作 |
+| 2 | 双语 HTML 转换 | learn-mattpocock | 不记录 | 个人练习，无产出变化 |
+
+去向选项：`工作日志` · `个人日记` · `不记录`
+
+**呈现给用户确认**。用户修正去向或标记跳过后，只有批准的条目进入后续聚合。
+
+### Step 5：检查 Git 提交记录
 
 ```bash
 git log --oneline --since="YYYY-MM-DD" --all
@@ -67,7 +82,7 @@ git log --format="%h %ad %s" --date=iso -N
 
 **完成标记**：今天所有提交已罗列。
 
-### Step 5：按主题域聚合
+### Step 6：按主题域聚合
 
 这是最关键的步骤——**不做时间线平铺，只按主题域合并**。
 
@@ -86,7 +101,7 @@ git log --format="%h %ad %s" --date=iso -N
 
 **完成标记**：所有事件聚合为不超过 6 个主题域（理想 3-5 个），无零散单事件段落。
 
-### Step 6：呈现结果
+### Step 7：呈现结果
 
 按以下结构输出日报（语言与用户当前语言一致）：
 
@@ -121,15 +136,12 @@ git log --format="%h %ad %s" --date=iso -N
 1. bullet...
 ```
 
-### Step 7：可选 — 写入 Obsidian 工作日志
+### Step 8：可选 — 写入 Obsidian 工作日志
 
-询问用户是否需要写入工作日志。如果用户确认，调用 `obsidian-diary` 技能：
+询问用户是否需要写入工作日志。如果用户确认：
 
-```bash
-uv run --script <obsidian-diary脚本> --vault work
-```
-
-读取今日日记全文，用 Edit 工具追加或更新对应段落。
+- 优先调用 `obsidian-diary` skill（如已安装）
+- 不可用时，直接读取目标日记文件并用 Edit 工具追加或更新对应段落
 
 不主动写入——等待用户确认。
 
@@ -138,6 +150,6 @@ uv run --script <obsidian-diary脚本> --vault work
 | 症状 | 原因 | 操作 |
 |------|------|------|
 | nmem 返回 0 结果 | 今日无 Nowledge Mem 记录 | 直接跳到 Step 2 查会话文件 |
-| 会话文件目录有多个项目 | 当前分支涉及多个项目目录 | 对每个项目目录重复 Step 2→4，在 Step 5 合并 |
+| 会话文件目录有多个项目 | 当前分支涉及多个项目目录 | 对每个项目目录重复 Step 2→5，在 Step 6 合并 |
 | git log --since 无输出 | commit 标记日期不匹配 | 去掉 --since，用 `git log -20` 看最近提交 |
-| obsidian-diary 脚本找不到 | skill 未安装 | 提示用户先安装 obsidian-diary skill |
+| obsidian-diary 不可用 | skill 未安装 | 直接用 Edit 工具追加，见 Step 8 fallback |

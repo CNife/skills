@@ -74,9 +74,6 @@ class PiPackage:
 # ── Network helpers ──────────────────────────────────────────────────────────
 
 
-
-
-
 def _json_get(url: str, timeout: int = 15, retries: int = 3) -> dict[str, Any] | list | None:
     """GET a JSON endpoint with retries.
 
@@ -104,9 +101,6 @@ def _json_get(url: str, timeout: int = 15, retries: int = 3) -> dict[str, Any] |
                 return None
             time.sleep(0.5 * (attempt + 1))
     return None
-
-
-
 
 
 # ── Determine package type ────────────────────────────────────────────────────

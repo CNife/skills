@@ -244,9 +244,7 @@ def score_search_formula_b(pkg: PiPackage) -> float:
     return (pkg.monthly - pkg.weekly) / (pkg.weekly + 10)
 
 
-def compute_search_scores(
-    packages: list[PiPackage], use_formula_b: bool
-) -> list[PiPackage]:
+def compute_search_scores(packages: list[PiPackage], use_formula_b: bool) -> list[PiPackage]:
     """Score rising candidates using search-only data (no range API calls)."""
     scorer = score_search_formula_b if use_formula_b else score_search_formula_a
     for pkg in packages:
@@ -388,16 +386,12 @@ def compare_lists(
 
 
 def print_list_comparison(
-    label: str,
-    overlap: float,
-    spearman: float,
-    search_names: list[str],
-    range_names: list[str],
+    label: str, overlap: float, spearman: float, search_names: list[str], range_names: list[str]
 ) -> bool:
     """Print comparison results. Returns True if replaceable."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"公式: {label}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Overlap (top-{TOP_K}):       {overlap:.3f}  (阈值 ≥{OVERLAP_THRESHOLD})")
     print(f"  Spearman (top-{TOP_K}):       {spearman:.3f}  (阈值 ≥{SPEARMAN_THRESHOLD})")
 
@@ -411,21 +405,21 @@ def print_list_comparison(
     # Print top-30 side by side
     print(f"\n  Top-{TOP_K} 对比:")
     print(f"  {'#':>2}  {'search-only':<40} {'range':<40}")
-    print(f"  {'--':>2}  {'-'*40} {'-'*40}")
+    print(f"  {'--':>2}  {'-' * 40} {'-' * 40}")
     for i in range(TOP_K):
         s = search_names[i] if i < len(search_names) else ""
         r = range_names[i] if i < len(range_names) else ""
         marker = " ←→" if s == r else ""
-        print(f"  {i+1:>2}  {s:<40} {r:<40}{marker}")
+        print(f"  {i + 1:>2}  {s:<40} {r:<40}{marker}")
 
     return replaceable
 
 
 def print_conclusion(best_label: str, best_ok: bool) -> None:
     """Print final conclusion for the pipeline decision."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  结论")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     if best_ok:
         print(f"  ✅ 可替代 — 使用 {best_label}")
         print("  后续: F2a — 删 range API 调用, 改用 search-only 公式")
@@ -444,9 +438,9 @@ def main() -> None:
     print("F1 验证报告")
 
     # ── Phase 0: Probe ──
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  Phase 0: 探针 (探测 search API downloads 字段)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     has_monthly = probe_search_api()
     if not has_monthly:
         print("\n  ✗ monthly 字段缺失 — F2a 不可行，无需继续验证")
@@ -455,9 +449,9 @@ def main() -> None:
         return
 
     # ── Phase 1: Fetch candidates ──
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  Phase 1: 采集候选包")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     candidates = fetch_candidates()
     if not candidates:
         _warn("未获取到任何包，退出")
@@ -469,9 +463,9 @@ def main() -> None:
     print(f"  新锐候选 (weekly≥{RISING_MIN_WEEKLY}): {len(rising_candidates)}")
 
     # ── Phase 2: Search-only scores ──
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  Phase 2: 计算 search-only 分数 (两种公式)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Formula A
     search_a = compute_search_scores(
@@ -486,16 +480,14 @@ def main() -> None:
     print("  公式 (b) (monthly-weekly)/(weekly+10): 完成")
 
     # ── Phase 3: Range-based scores ──
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  Phase 3: 计算 range API 分数 (基准)")
-    print(f"{'='*60}")
-    range_results = compute_range_scores(
-        [PiPackage(**p.__dict__) for p in rising_candidates]
-    )
+    print(f"{'=' * 60}")
+    range_results = compute_range_scores([PiPackage(**p.__dict__) for p in rising_candidates])
     print("  range API 评分: 完成")
 
     # ── Phase 4-5: Compare + Conclusion ──
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  Phase 4-5: 对比 & 结论")
     results: list[tuple[str, bool]] = []
 
