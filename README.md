@@ -14,6 +14,7 @@ hermes-agent/        Hermes Agent 专用技能
 └── worklog/         活动轨迹收集 → PDF → 邮件投递
 
 knowledge/           知识管理
+├── nmem-maintenance/  Nowledge Mem 知识库巡检与事件处理
 └── obsidian-diary/  会话总结 → Obsidian 工作日志/日记
 
 utility/             通用工具（与代理无关）
@@ -65,6 +66,7 @@ bunx skills add CNife/skills@pi-agent/pi-skill-audit --full-depth
 
 | Skill | 描述 |
 |-------|------|
+| [nmem-maintenance](./knowledge/nmem-maintenance) | Nowledge Mem 知识库巡检——检查服务状态、审查待处理事件、分类处理陈旧结晶/重复记忆/矛盾 |
 | [obsidian-diary](./knowledge/obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
 
 ### productivity/
