@@ -1,0 +1,25 @@
+# OMP 会话 JSONL 格式
+
+当需要手工解析 OMP 的 JSONL 会话文件时参考。`scripts/extract_today.py` 已自动处理此格式，仅在调试或核对时查阅。
+
+## 文件位置
+
+`~/.omp/agent/sessions/<项目路径>/<UTC时间戳>_<UUID>.jsonl`
+
+## 关键行类型
+
+| 行类型 | 识别 | 提取字段 |
+|--------|------|----------|
+| `session` | `"type":"session"` | `id`(UUID)、`timestamp`(UTC)、`cwd`(工作目录) |
+| `title` | `"type":"title"` | `title`（会话标题，文件第一行） |
+| `message` | `"type":"message"` | `message.role`(user/assistant/toolResult)、`message.content[]`（数组，需过滤非文本块） |
+
+## 与 Pi 的关键差异
+
+- **标题来源**：OMP 的标题在文件第一行的 `{"type":"title","title":"主题名"}` 中，而非 `session_info` 行
+- **额外条目类型**：可能包含 `model_change`、`thinking_level_change`、`compaction`、`branch_summary`、`custom_message`、`session_init`、`mode_change` 等类型——**计数和提取时跳过这些行**，只处理 `type:"message"`
+- **`message.content[]` 过滤**：OMP 消息的 content 数组中包含 `{type:"thinking"}`（思考过程）、`{type:"toolCall"}`（工具调用参数）、`{type:"toolResult"}`（工具执行结果）等非文本类型，提取文本时**只取 `type:"text"` 元素**的 `text` 字段
+
+## 提取字段
+
+与 Pi 一致：标题、消息量、首条用户消息、产出摘要、工作目录
