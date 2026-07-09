@@ -60,3 +60,17 @@ cp <repo-root>/<category>/<name>/SKILL.md ~/.agents/skills/<name>/SKILL.md
 - [ ] SKILL.md 的 `description:` 完整
 - [ ] 改过 SKILL.md 时，已 cp 到安装副本
 - [ ] 新技能或改过名时，同步更新了 README.md 技能表
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues (external PRs are not a triage surface). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles map to default label names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
