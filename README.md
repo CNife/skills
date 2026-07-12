@@ -8,13 +8,14 @@
 pi-agent/            Pi Agent 生态专用技能
 └── pi-trending/     Pi 生态热门包发现
 
-knowledge/           知识管理
+knowledge/           个人知识系统
 ├── nmem-maintenance/  Nowledge Mem 知识库巡检与事件处理
-└── obsidian-diary/  会话总结 → Obsidian 工作日志/日记
+├── obsidian-diary/    会话总结 -> Obsidian 工作日志/日记
+└── daily-recap/       今日会话聚合成日报，可选写入 Obsidian
 
 utility/             通用工具（与代理无关）
 ├── models-dev-query/    AI 模型规格查询
-└── search-router/       智能搜索路由器
+└── search-router/       网络搜索路由器
 
 .archive/            不再维护的历史技能（仅作参考）
 ├── arch-wsl-cleanup/
@@ -46,20 +47,15 @@ bunx skills add CNife/skills --full-depth
 
 | Skill | 描述 |
 |-------|------|
-| [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 — 从 npm registry 计算趋势分 |
+| [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 - 从 npm registry 计算趋势分 |
 
 ### knowledge/
 
 | Skill | 描述 |
 |-------|------|
-| [nmem-maintenance](./knowledge/nmem-maintenance) | Nowledge Mem 知识库巡检——检查服务状态、审查待处理事件、分类处理陈旧结晶/重复记忆/矛盾 |
+| [nmem-maintenance](./knowledge/nmem-maintenance) | Nowledge Mem 知识库巡检--检查服务状态、审查待处理事件、分类处理陈旧结晶/重复记忆/矛盾 |
 | [obsidian-diary](./knowledge/obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
-
-### productivity/
-
-| Skill | 描述 |
-|-------|------|
-| [daily-recap](./productivity/daily-recap) | 整理今日工作内容 — 搜索 Nowledge Mem 线程、检查会话文件、查 git 提交，按主题聚合生成结构化日报，可选写入 Obsidian |
+| [daily-recap](./knowledge/daily-recap) | 整理今日工作内容 - 搜索 Nowledge Mem 线程、检查会话文件、查 git 提交，按主题聚合生成结构化日报，可选写入 Obsidian |
 
 ### utility/
 
