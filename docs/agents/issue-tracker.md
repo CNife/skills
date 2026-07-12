@@ -13,6 +13,21 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+## Issue type labels
+
+Issues carry a **type label** to distinguish what kind of work they represent.
+These are orthogonal to the triage-state labels (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix` — see `triage-labels.md`); an
+issue normally carries one type label plus one triage label.
+
+| Label    | Meaning                                  | Applied by      |
+| -------- | ---------------------------------------- | --------------- |
+| `spec`   | A specification / PRD issue              | `/to-spec`      |
+| `ticket` | An implementation ticket (tracer bullet) | `/to-tickets`   |
+
+When `/to-spec` publishes a spec, apply `spec` (in addition to `ready-for-agent`).
+When `/to-tickets` publishes a ticket, apply `ticket` (in addition to `ready-for-agent`).
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
