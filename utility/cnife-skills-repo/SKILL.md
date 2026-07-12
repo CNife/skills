@@ -1,6 +1,6 @@
 ---
 name: cnife-skills-repo
-description: Guide to managing and optimizing skills in the CNife/skills repository — quality gates, creation/publishing workflow, and the sub-agent verification loop for automated skill auditing and repair. Use when working with this repository, adding or modifying skills, running bulk operations across skills, or when the user mentions skill quality, verification, or repo maintenance.
+description: Guide to managing and optimizing skills in the CNife/skills repository - quality gates, creation/publishing workflow, and the sub-agent verification loop for automated skill auditing and repair. Use when working with this repository, adding or modifying skills, running bulk operations across skills, or when the user mentions skill quality, verification, or repo maintenance.
 ---
 
 # CNife Skills Repository
@@ -8,8 +8,8 @@ description: Guide to managing and optimizing skills in the CNife/skills reposit
 Personal skills repository published to `github.com/CNife/skills`. Skills are organized by category under `<category>/<name>/` and are installed via `bunx skills add CNife/skills@<name>`.
 
 ```text
-<skill-name>/
-├── SKILL.md              # Required — skill definition
+<category>/<skill-name>/
+├── SKILL.md              # Required - skill definition
 ├── scripts/              # Python scripts (PEP 723)
 └── references/           # Reference files
 ```
@@ -33,8 +33,8 @@ Run before commit:
 
 ```bash
 cd <repo-root>
-uv run ruff check --fix .
-uv run ruff format .
+uv run ruff check --fix <category>/<name>/
+uv run ruff format <category>/<name>/
 ```
 
 ### SKILL.md Frontmatter
@@ -54,12 +54,15 @@ Verify frontmatter across all skills:
 ```bash
 python3 -c "
 import yaml, glob
-for f in sorted(glob.glob('*/SKILL.md')):
+files = sorted(glob.glob('*/*/SKILL.md'))
+assert files, 'no SKILL.md found - glob wrong, not all passed'
+for f in files:
     with open(f) as fh:
         meta = yaml.safe_load(fh.read().split('---')[1])
-    name = f.split('/')[0]
+    name = f.split('/')[1]
     errors = []
     if not meta.get('name'): errors.append('missing name')
+    elif meta.get('name') != name: errors.append('name ' + str(meta.get('name')) + ' != dir ' + name)
     if not meta.get('description'): errors.append('missing description')
     status = '❌ ' + ', '.join(errors) if errors else '✅'
     print(f'{status} {name}')
@@ -79,12 +82,12 @@ Configured in `.pre-commit-config.yaml`:
 
 ```bash
 # 1. Create skill directory and SKILL.md
-mkdir -p <name>/scripts
+mkdir -p <category>/<name>/scripts
 # Write SKILL.md with frontmatter
 
 # 2. Quality checks
-uv run ruff check --fix <name>/
-uv run ruff format <name>/
+uv run ruff check --fix <category>/<name>/
+uv run ruff format <category>/<name>/
 
 # 3. Update README.md skill table
 # Add row in README.md
@@ -94,13 +97,16 @@ git add -A
 git commit -m "feat(<name>): brief description"
 git push
 
-# 5. Install globally (skills.sh)
+# 5. Sync to installed copy (required when SKILL.md or scripts changed)
+cp <category>/<name>/SKILL.md ~/.agents/skills/<name>/SKILL.md
+
+# 6. Install globally (skills.sh)
 bunx skills add CNife/skills@<name> -g -y
 ```
 
 ## Sub-Agent Verification Loop
 
-Use `delegate_task` to run a closed-loop audit-fix-verify cycle when bulk-maintaining skills. This prevents the main agent from declaring work done when issues remain.
+Use a read-only subagent (the `subagent` tool, `agent: "reviewer"`, `mode: "spawn"`) to run a closed-loop audit-fix-verify cycle when bulk-maintaining skills. This prevents the main agent from declaring work done when issues remain.
 
 ### Workflow
 
@@ -109,13 +115,13 @@ Phase 1: Sub-agent scans + reports issues
          ↓
 Phase 2: Main agent fixes each issue
          ↓
-Phase 3: Sub-agent re-verifies → issues remain? → back to Phase 2
-                             → all clear?  → done
+Phase 3: Sub-agent re-verifies -> issues remain? -> back to Phase 2
+                             -> all clear?  -> done
 ```
 
 ### Phase 1: Scan (sub-agent)
 
-Spawn a sub-agent with **read-only tools only** (`toolsets=["file"]`) to scan all skills and produce a structured issue report:
+Spawn a read-only subagent (`reviewer` in `spawn` mode) to scan all skills and produce a structured issue report:
 
 ```markdown
 ## Issues Report
@@ -138,41 +144,32 @@ Spawn a sub-agent with **read-only tools only** (`toolsets=["file"]`) to scan al
 - archived-skill (in README but no directory)
 ```
 
-Pass a clear context to the sub-agent listing what to check:
+Dispatch the subagent with a self-contained task listing what to check:
 
-```python
-from hermes_tools import delegate_task
+- SKILL.md has valid frontmatter (name + description)
+- Python scripts in scripts/ have PEP 723 headers
+- ruff compliance (run ruff check)
+- README.md matches actual skill directories
 
-result = delegate_task(
-    goal="Scan all skills in the repository and report issues",
-    context="""Check each skill for:
-1. SKILL.md has valid frontmatter (name + description)
-2. Python scripts in scripts/ have PEP 723 headers
-3. ruff compliance (run ruff check --fix dry-run)
-4. README.md matches actual skill directories""",
-    toolsets=["file", "terminal"],
-)
-```
-
-The sub-agent returns a structured markdown report. **Do not skip this step — always verify the report exists with actual findings before proceeding.**
+The sub-agent returns a structured markdown report. **Do not skip this step - always verify the report exists with actual findings before proceeding.**
 
 ### Phase 2: Fix (main agent)
 
 Work through each issue category from the report:
 
-1. **Bulk fixes first** — use `execute_code` or `patch` for repeated patterns (same fix across N files)
-2. **Manual fixes second** — unique per-skill issues
-3. **Commit strategically** — group related fixes into atomic commits; do NOT lump unrelated changes (README update + code fix + new skill) into one commit
+1. **Bulk fixes first** - use `executePython` or `edit` for repeated patterns (same fix across N files)
+2. **Manual fixes second** - unique per-skill issues
+3. **Commit strategically** - group related fixes into atomic commits; do NOT lump unrelated changes (README update + code fix + new skill) into one commit
 
 ### Phase 3: Re-verify (sub-agent)
 
-Spawn the same sub-agent again with the same scan criteria. Compare against Phase 1's report:
+Spawn a fresh subagent (`spawn` mode) again with the same scan criteria. Compare against Phase 1's report:
 
-- **If new issue count == 0** → verification passed, proceed to final commit + push
-- **If new issue count < previous count** → progress made, loop back to Phase 2
-- **If new issue count >= previous count** → the fix approach is wrong, pause and reassess strategy
+- **If new issue count == 0** -> verification passed, proceed to final commit + push
+- **If new issue count < previous count** -> progress made, loop back to Phase 2
+- **If new issue count >= previous count** -> the fix approach is wrong, pause and reassess strategy
 
-Use a fresh sub-agent instance to avoid stale context biasing the verification.
+A fresh `spawn`-mode instance avoids stale context biasing the verification.
 
 ### Loop Termination
 
@@ -184,7 +181,7 @@ Use a fresh sub-agent instance to avoid stale context biasing the verification.
 
 ## Single-Skill Optimization Loop
 
-对单个技能做迭代优化时，使用测试→审查→反思→优化的循环，而非一次性改完。
+对单个技能做迭代优化时，使用测试->审查->反思->优化的循环，而非一次性改完。
 
 ### The Loop
 
@@ -209,7 +206,7 @@ Use a fresh sub-agent instance to avoid stale context biasing the verification.
 
 ### Prompt 设计原则
 
-Worker subagent 的 prompt 必须**自包含**——给全执行步骤和命令，不要让它第一手读 SKILL.md。
+Worker subagent 的 prompt 必须**自包含**--给全执行步骤和命令，不要让它第一手读 SKILL.md。
 
 ```text
 # 好的 prompt：步骤写死，不需要额外读文件
