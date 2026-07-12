@@ -135,7 +135,7 @@ def _get_author(pkg: dict) -> str:
 def fetch_top_packages(max_pages: int = 2) -> list[PiPackage]:
     """Fetch pi packages from npm search API, sorted by popularity.
 
-    按周下载量降序采集 pi 包，最多取 max_pages 页。
+    按下载量降序采集 pi 包，最多取 max_pages 页。
     """
     all_pkgs: list[PiPackage] = []
     total = 0
@@ -210,7 +210,7 @@ def _rising_score(pkg: PiPackage) -> float:
 
 
 def render_markdown(mainstream: list[PiPackage], rising: list[PiPackage]) -> None:
-    """Render two Markdown tables: mainstream (by weekly downloads) and rising (by growth score).
+    """Render two Markdown tables: mainstream (by monthly downloads) and rising (by growth score).
 
     The description column contains the raw English description from npm.
     When presenting to the user, the AI SHALL translate each description
