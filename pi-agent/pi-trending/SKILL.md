@@ -1,11 +1,7 @@
 ---
 name: pi-trending
-description: >
-  Discover trending Pi Agent packages - the hot, rising, and newly-released
-  extensions, skills, themes, and prompt templates on npm. Use when the user
-  wants to see what's hot in the pi ecosystem, find a good extension/skill/theme,
-  or check package popularity rankings. Triggers: "最近有什么热门的 pi 包",
-  "有什么好用的 pi extension/skill/theme", "pi 包排行榜", "pi trending".
+description: 发现 npm 上热门和新锐的 Pi Agent 包（扩展/技能/主题/prompt 模板），计算趋势分并汇总展示。
+disable-model-invocation: true
 ---
 
 # Pi Trending

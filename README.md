@@ -13,7 +13,6 @@ knowledge/           知识管理
 └── obsidian-diary/  会话总结 → Obsidian 工作日志/日记
 
 utility/             通用工具（与代理无关）
-├── cnife-skills-repo/   本仓库元技能和质量门禁
 ├── models-dev-query/    AI 模型规格查询
 └── search-router/       智能搜索路由器
 
@@ -22,6 +21,7 @@ utility/             通用工具（与代理无关）
 ├── ast-grep/
 ├── audit-hermes-agent-skills/
 ├── chezmoi-sync/
+├── cnife-skills-repo/
 ├── git-master/
 ├── opencode-permission/
 ├── optimize-agents-md/
@@ -65,8 +65,7 @@ bunx skills add CNife/skills --full-depth
 
 | Skill | 描述 |
 |-------|------|
-| [cnife-skills-repo](./utility/cnife-skills-repo) | 本仓库结构说明、Python 项目规范、PEP 723 单脚本模式和 pre-commit 钩子配置 |
-| [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 — 模型规格、定价、上下文限制、提供商 API 端点 |
+| [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
 | [search-router](./utility/search-router) | 基于 opencli 的智能搜索路由器，根据话题路由到最佳搜索源 |
 
 ### .archive/
