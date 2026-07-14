@@ -73,13 +73,16 @@ nmem feed --days 7 -j
 #### 4b. 重复记忆（flag_merge_candidate）
 
 1. **读取全部候选记忆的完整内容**，不得只看标题就做决定：
+
    ```bash
    nmem memories show <id1> -j
    nmem memories show <id2> -j
    ```
+
 2. 比较内容**完整度**（长度、覆盖的细节数量、是否包含验证方法等独有信息）
 3. 保留最完整的一条
 4. 删除其余：
+
    ```bash
    nmem memories delete <id_to_delete1> <id_to_delete2>
    ```
@@ -113,13 +116,16 @@ nmem feed --days 7 -j
 **服务状态**: ✅ xxx
 
 ### ✅ 已处理
+
 - 陈旧结晶 × N - 已更新/已废弃
 - 重复记忆 × N - 已合并
 - 矛盾裁定 × N - 已裁定+更新
 
 ### ⏸️ 仍需用户裁定
+
 - ...
 
 ### ℹ️ info 仅参考
+
 - ...
 ```
