@@ -47,7 +47,8 @@ bunx skills add CNife/skills --full-depth
 
 | Skill | 描述 |
 |-------|------|
-| [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 - 从 npm registry 计算趋势分 |
+| [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 — 从 npm registry 计算趋势分 |
+| [add-provider-models-to-pi](./pi-agent/add-provider-models-to-pi) | 从源 provider（models.dev/官方文档）拉取参数并适配进 pi 的 models.json |
 
 ### knowledge/
 
