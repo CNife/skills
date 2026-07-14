@@ -11,6 +11,8 @@ description: >
   "添加权限", "移除权限", "把 X 加到允许列表", "skip confirmation for", and
   similar — even if the user doesn't explicitly mention OpenCode's config.
 compatibility: Requires `uv` (auto-manages Python runtime). Uses `json-five` for JSONC round-trip comment preservation.
+metadata:
+  internal: true
 ---
 
 # OpenCode Permission Manager

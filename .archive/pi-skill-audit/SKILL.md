@@ -13,6 +13,8 @@ description: >
   unused, or when reviewing what skills are worth keeping. This is the
   go-to skill for any pi skill management task. Not for Hermes agent skills
   — use audit-hermes-agent-skills instead.
+metadata:
+  internal: true
 ---
 
 # Pi Agent Skill Audit

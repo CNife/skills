@@ -1,6 +1,8 @@
 ---
 name: reminder-review-session
 description: 在会话问题解决得差不多时提醒我整理知识到 Obsidian，根据内容规模选择日记或独立文章
+metadata:
+  internal: true
 ---
 
 # 会话知识整理提醒

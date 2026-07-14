@@ -2,6 +2,7 @@
 name: git-master
 description: "MUST USE for ANY git operations. Atomic commits, rebase/squash, history search (blame, bisect, log -S). Use when the user mentions commit, rebase, squash, git blame, bisect, who wrote, when was X added, find the commit that, git history, or any git-related operations."
 metadata:
+  internal: true
   version: "1.0.0"
 ---
 

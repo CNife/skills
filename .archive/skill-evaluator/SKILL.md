@@ -6,6 +6,8 @@ description: >
   Triggers: "评估/找/对比/安装/推荐 skill", "skill 安全", "哪个 skill 好用", "找个技能",
   "给 agent 装技能", "safe skill", "evaluate/compare/install skill", or any request involving
   skill discovery, security assessment, installation, or cross-agent compatibility.
+metadata:
+  internal: true
 ---
 
 # Skill Evaluator

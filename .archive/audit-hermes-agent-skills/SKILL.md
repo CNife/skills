@@ -14,6 +14,8 @@ description: >
   "audit hermes skills". This skill is specific to Hermes Agent — do not use
   for other agents. Make sure to load this skill whenever Hermes skill
   management, cleanup, or usage analysis is mentioned.
+metadata:
+  internal: true
 ---
 
 # Audit Hermes Agent Skills

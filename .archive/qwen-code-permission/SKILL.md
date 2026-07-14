@@ -3,6 +3,8 @@ name: qwen-code-permission
 description: Automate adding permission rules to Qwen Code's settings.json. Use whenever the user wants to allow, deny, or require confirmation for a command in Qwen Code. Trigger on phrases like "把 X 加到允许列表"、"添加到允许"、"允许 Bash(X)"、"deny 某命令"、"permission rule"、"auto-approve this command"、"skip confirmation for"、"always allow" — even if the user doesn't explicitly mention Qwen Code's settings.json. Also use when working with Qwen Code permission configuration or troubleshooting auto-approval rules.
 compatibility: Requires `uv` (auto-manages Python runtime)
 category: qwen code
+metadata:
+  internal: true
 ---
 
 # Qwen Code Permission Manager

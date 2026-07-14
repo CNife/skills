@@ -6,6 +6,8 @@ description: >-
   Use whenever the user wants to sync dotfiles, says "同步", "chezmoi sync",
   "提交 dotfiles", "备份配置", wants to record home changes into the dotfiles
   repo, or is about to run chezmoi git commands manually.
+metadata:
+  internal: true
 ---
 
 # Chezmoi Sync Skill

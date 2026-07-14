@@ -17,21 +17,7 @@ utility/             通用工具（与代理无关）
 ├── models-dev-query/    AI 模型规格查询
 └── search-router/       网络搜索路由器
 
-.archive/            不再维护的历史技能（仅作参考）
-├── arch-wsl-cleanup/
-├── ast-grep/
-├── audit-hermes-agent-skills/
-├── chezmoi-sync/
-├── cnife-skills-repo/
-├── git-master/
-├── opencode-permission/
-├── optimize-agents-md/
-├── pi-skill-audit/
-├── prompt-craft/
-├── qwen-code-permission/
-├── reminder-review-session/
-├── skill-evaluator/
-└── worklog/
+.archive/            不再维护的历史技能
 ```
 
 ## 安装
@@ -64,10 +50,6 @@ bunx skills add CNife/skills --full-depth
 |-------|------|
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
 | [search-router](./utility/search-router) | 基于 opencli 的智能搜索路由器，根据话题路由到最佳搜索源 |
-
-### .archive/
-
-仅作参考，不再维护。完整列表见目录结构。
 
 ## 开发
 

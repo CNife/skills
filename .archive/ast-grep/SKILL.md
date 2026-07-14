@@ -1,6 +1,8 @@
 ---
 name: ast-grep
 description: "Search and rewrite code by AST structure across 25 languages with ast-grep (sg). Use when the task is structural - find function calls shaped like X, rewrite console.log to logger.info, find all `as any`, migrate require() to import, find empty catch blocks, missing await, codemod a class hierarchy, scan project against YAML rules. Preferred over grep when the user mentions code SHAPE or needs deterministic refactoring across many files. Triggers: 'ast-grep', 'sg', 'ast grep', 'astgrep', 'find all functions that', 'find every call to', 'codemod', 'structural search', 'pattern match code', 'replace pattern across files', 'rename function everywhere', 'find usages of pattern', 'apply this transformation to all', 'migrate X to Y'."
+metadata:
+  internal: true
 ---
 
 # ast-grep

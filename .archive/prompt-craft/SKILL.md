@@ -1,6 +1,8 @@
 ---
 name: prompt-craft
 description: 根据 OpenAI 提示词工程最佳实践，审查并优化已有 LLM 提示词。用户说“优化提示词”“改一下 prompt”“做提示词工程”“让模型输出更好”，或贴出一段提示词请求改进时，务必使用此技能。专注诊断和改写，不负责从零创建模板、生成 / 命令、写入文件或选择保存路径。
+metadata:
+  internal: true
 ---
 
 # Prompt Craft

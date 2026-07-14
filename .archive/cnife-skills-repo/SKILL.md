@@ -1,6 +1,8 @@
 ---
 name: cnife-skills-repo
 description: Guide to managing and optimizing skills in the CNife/skills repository — quality gates, creation/publishing workflow, and the sub-agent verification loop for automated skill auditing and repair. Use when working with this repository, adding or modifying skills, running bulk operations across skills, or when the user mentions skill quality, verification, or repo maintenance.
+metadata:
+  internal: true
 ---
 
 # CNife Skills Repository

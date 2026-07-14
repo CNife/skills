@@ -7,6 +7,8 @@ description: >-
   shrink their WSL footprint — even if they just say "空间不够", "磁盘满了",
   "WSL 太大了", or "clean up my system". Prefer this skill over ad-hoc
   cleanup commands on Arch WSL.
+metadata:
+  internal: true
 ---
 
 # Arch WSL Disk Cleanup
