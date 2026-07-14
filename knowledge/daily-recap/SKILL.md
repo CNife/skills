@@ -1,12 +1,12 @@
 ---
 name: daily-recap
-description: 将今天所有机器上的 Pi 和 OMP 会话整理成主题聚合的结构化日报，可选写入 Obsidian 工作日志。用户说"整理今天工作""日报""daily recap""今天做了什么"时使用。
+description: 将所有机器上的 Pi 和 OMP 会话整理成主题聚合的结构化日报，可选写入 Obsidian 工作日志。
 disable-model-invocation: true
 ---
 
 # Daily Recap - 今日工作整理
 
-将所有机器上的 Agent 会话整理为一份**主题聚合**的日报--合并分散的会话记录按主题域聚拢，不做时间线平铺。最终输出兼容 `obsidian-diary` 格式，可直接写入工作日志或个人日记。
+将所有机器上的 Agent 会话整理为一份**主题聚合**的日报，输出兼容 `obsidian-diary` 格式，可直接写入工作日志或个人日记。
 
 **nmem 是 source of truth**：多台机器上的会话通过 nmem 同步，覆盖全部机器的全部会话。本地 jsonl 文件仅存在于当前机器，是**本机会话的内容增强来源**。
 
@@ -24,24 +24,22 @@ cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 3
 
 - nmem 仍应检查：`nmem --json t list -n 25` - 从 `created_at` 筛选今天。**nmem 命令失败/不可用 -> Hard stop**，见 `references/recovery-guide.md`：询问用户是否仅看本机会话（用 `extract_today.py`）
 - 脚本输出 `total: 0` 且 nmem 也无今日线程 -> 告知用户"今天没有会话记录"并终止
-- 仅 nmem 有数据 -> 纯远程：跳过 Step 1a（本机无会话文件）和 1c（无本机 cwd），直接进入 1b 提取远程会话
+- 仅 nmem 有数据 -> 纯远程：跳过 Step 1a（本机无会话文件），直接进入 1b 提取远程会话
 - 脚本有输出 -> 进入 Step 1
 
-排除当前日报会话：脚本输出的 `sessions[]` 中找标题含"日报/daily-recap"的条目，记下其 `session_id`，在 Step 1a 用 `--exclude` 排除。
+当前日报会话（本次整理本身）也在脚本输出中，无需此时排除--Step 2 分类时归入"当前日报"类，不纳入候选。
+
+**完成条件**：今日会话证据集已确认非空（脚本或 nmem 至少一路有数据），或已告知用户"今天没有会话记录"并终止。
 
 ### Step 1：收集并提取
 
 两路并行：
 
-#### 1a. 本机会话 - 用提取脚本
+#### 1a. 本机会话 - 引用 Step 0 脚本输出
 
-脚本已提取所有本地会话的结构化数据（标题、时间 CST、项目、消息量、首条用户消息、产出摘要）。脚本输出即为本机会话的**完整证据集**。
+Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据集**（标题、时间 CST、项目、消息量、首条用户消息、产出摘要），无需重跑。
 
-```bash
-cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 3
-```
-
-参数备忘：`--min-msgs N` 跳过小于 N 条消息的 stub 会话；`--exclude <uuid>` 排除指定 session（用于排除当前日报会话，从脚本输出中找到对应的 `session_id`）。
+参数备忘（Step 0 未带时可补跑）：`--min-msgs N` 跳过小于 N 条消息的 stub 会话；`--exclude <uuid>` 排除指定 session。
 
 #### 1b. 远程会话 - nmem t show
 
@@ -53,17 +51,7 @@ nmem --json t show "<thread_id>" --limit 5 --offset 0 --content-limit 1000
 
 每读一段，问：**这段产生了什么可记录的产出？** 提取标题和核心事件摘要。5 条不足时以 `--offset 5` 递增继续读取，直到无新内容；远程会话通常 2-3 段即可覆盖核心产出。
 
-远程会话的 git 提交不可用，标注"📡 远程，git 记录不可用"。
-
-#### 1c. Git 提交（证据校准）
-
-从脚本输出的 `cwd` 字段识别涉及哪些 git 仓库，逐仓库查询今日提交：
-
-```bash
-git -C <repo_path> log --oneline --since="YYYY-MM-DD" --all
-```
-
-git 提交是**产出真实性的校准源**--agent 自我总结可能 overclaim，commit log 是 ground truth。不产出当日日记正文，仅作为构建候选表时的证据参考。
+**完成条件**：本机会话（脚本输出）与远程会话（nmem t show）两路证据已收集完毕。
 
 ### Step 2：分类
 
@@ -73,7 +61,9 @@ git 提交是**产出真实性的校准源**--agent 自我总结可能 overclaim
 |------|------|--------|
 | **本机会话** | UUID 在脚本输出中 | 脚本输出的结构化数据 + 原始 jsonl（需要时） |
 | **远程会话** | UUID 仅在 nmem 中 | nmem t show 分段提取 |
-| **当前日报** | 标题含"日报/daily-recap"关键词 | 标记"当前日报"，不纳入候选 |
+| **当前日报** | 标题含"日报/daily-recap"关键词 | 标记"当前日报"并跳过 |
+
+**完成条件**：每个会话已归入本机/远程/当前日报三类之一，无遗漏。
 
 ### Step 3：构建候选表（用户确认）
 
@@ -89,13 +79,15 @@ git 提交是**产出真实性的校准源**--agent 自我总结可能 overclaim
 
 **呈现给用户确认**。用户修正去向或标记跳过后，仅批准的条目进入下一步。
 
+**完成条件**：用户已确认或修正每个候选条目的去向。
+
 ### Step 4：主题聚合并输出日报
 
-对确认的条目进行**主题聚合**--按主题域合并，输出兼容 obsidian-diary 格式，不做时间线平铺：
+对确认的条目进行**主题聚合**--按主题域合并，输出兼容 obsidian-diary 格式：
 
 1. 语义相近的事件合并到同一个主题域下
 2. 同一主题下的多个事件 -> 1 个 `## 标题` + 子 bullet 展开
-3. 每个子 bullet 1-2 行，只写**结论和决策**，不展开细节、不列出 git 提交、不出现会话编号
+3. 每个子 bullet 1-2 行，**只写结论和决策**
 4. 按重要性排序：部署/功能交付在前，基础设施/配置在后，探索/学习最后
 5. 不超过 6 个主题域（理想 3-5 个），无零散单事件段落
 
@@ -126,7 +118,9 @@ git 提交是**产出真实性的校准源**--agent 自我总结可能 overclaim
 
 #### 写入前门禁
 
-输出模板不含以下元素（对应 obsidian-diary Blocker ③，并追加 daily-recap 专属排除项）：会话全景表、Git 提交列表、会话编号、来源标记、消息量、agent 操作日志、验证流程、阶段标记。
+日记正文只含主题域标题 + 结论决策 bullet。以下中间产物不得写入（对应 obsidian-diary Blocker ③ + daily-recap 专属）：会话全景表、会话编号、来源标记、消息量、agent 操作日志、验证流程、阶段标记。
+
+**完成条件**：每个确认条目都归入一个主题域，无零散单事件；正文通过写入前门禁。
 
 ### Step 5：可选 - 写入 Obsidian
 
@@ -137,7 +131,7 @@ git 提交是**产出真实性的校准源**--agent 自我总结可能 overclaim
 3. 优先调用 `obsidian-diary` skill（如已安装且可用），按该 skill 的门禁规则执行
 4. `obsidian-diary` 不可用时，直接用 Edit 工具补全整合
 
-不主动写入--等待用户确认。
+**完成条件**：日记已补全式整合写入，或用户选择不写入。
 
 ## 参考
 
