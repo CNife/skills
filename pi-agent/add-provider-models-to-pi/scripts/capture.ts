@@ -17,7 +17,7 @@
  * - before_provider_headers 拿不到 Authorization（pi 在事件返回后才注入 auth）
  * - 日志不脱敏，含 payload 完整内容，调试完请删除
  */
-import { appendFileSync, writeFileSync, existsSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // ---- 日志路径 ----
@@ -56,9 +56,7 @@ const MID = "──────────────────────�
 export default function (pi: ExtensionAPI) {
 	// 启动时清空旧日志：每次新 run 重新开始
 	try {
-		if (existsSync(LOG_PATH)) {
-			writeFileSync(LOG_PATH, "", "utf8");
-		}
+		writeFileSync(LOG_PATH, "", "utf8");
 		appendLog(`# pi-capture log\n# started ${new Date().toISOString()}\n# LOG_PATH=${LOG_PATH}\n\n`);
 	} catch (e) {
 		console.error(`[capture.ts] Failed to init log at ${LOG_PATH}:`, e);
@@ -153,7 +151,7 @@ function flushAssistantBlock(slot: RequestSlot, msg: any): void {
 	}
 
 	lines.push(`╠${MID}`);
-	lines.push("║ [HEADERS] before_provider_headers (含敏感头，本地调试不脱敏):");
+	lines.push("║ [HEADERS] before_provider_headers (不含 Authorization，见注):");
 	if (slot.headers === undefined) {
 		lines.push("║   (no headers captured — event did not fire?)");
 	} else {

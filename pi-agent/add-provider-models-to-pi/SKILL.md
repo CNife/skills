@@ -21,7 +21,7 @@ description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并�
 ### 2. 源定位 —— 按对应 provider（托管端点）匹配
 
 1. 读目标 pi provider 的 `baseUrl` + `api`。
-2. 在 models.dev 找 `api`/`baseUrl` 与之相同的 provider：命中则取参；未命中（如方舟）则回退抓该**对应 provider**的官方 API 文档（web）。
+2. 用 models-dev-query 技能查 models.dev，找 `api`/`baseUrl` 与之相同的 provider：命中则取参；未命中（如方舟）则回退抓该**对应 provider**的官方 API 文档（web）。
 3. 注意：models.dev 的厂商端点（minimax.io）与托管端点（方舟）是不同 provider，模型名相同也不能混用参数。
 
 - **完成标准**：每个目标模型的参数源已确定（models.dev 命中 / 官方文档回退），并记下依据。
@@ -46,7 +46,7 @@ description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并�
 - 合成：支持关闭则 `off` 映射到非 `null` 值（如 `"none"`，仅作"支持"标记，发送时仍走 `undefined`）；不支持关闭则 `off->null`。其余档位按模型实际支持情况映射成端点接受的 effort/toggle 字符串，不支持者置 `null`。同 provider 已有模型仅作交叉校验，不盲抄。
 - **完成标准**：每个推理模型已列出全部 7 个档位 `off/minimal/low/medium/high/xhigh/max` 的映射值；`null`=不支持，非 `null` 字符串=支持且为端点接受值；`off` 语义已明确（支持关闭->非 `null`，不支持关闭->`null`）。
 
-### 5. Checkpoint（push right）
+### 5. Checkpoint
 
 跑完取参+适配，产出 **brief** 再让用户确认一次，确认后才写入：
 
@@ -57,14 +57,11 @@ description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并�
 
 ---
 
-### 6–9. 验证阶段：测试-抓取-循环-固定
-
-写入配置后立即验证，使用 `capture.ts` 扩展抓取 pi 实际发送的请求和响应，
-通过 ≤3 轮测试-改进循环收敛到正确配置，最终固定。
+**验证阶段（步骤 6–9）：测试-抓取-循环-固定**--写入配置后立即验证，用 `capture.ts` 扩展抓取 pi 实际发送的请求和响应，通过 ≤3 轮测试-改进循环收敛到正确配置，最终固定。
 
 **前提**：步骤 5 已写入 `models.json` 且 `jq empty` 通过；`capture.ts` 位于技能 `scripts/capture.ts`。
 
-#### ⑥ 运行 agentic 测试
+### 6. 运行 agentic 测试
 
 用 `pi --extension` 临时加载 `capture.ts`，执行一个 agentic 任务（多轮工具调用），
 一次性覆盖四个调试维度：
@@ -81,7 +78,7 @@ PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
 - 日志写入 `PI_CAPTURE_LOG` 指定路径（默认 `/tmp/pi-capture.log`）。
 - **完成标准**：pi 正常完成请求、日志文件已生成非空。
 
-#### ⑦ 抓取调试
+### 7. 抓取调试
 
 读取日志文件，按 CALL 块分析以下四维度：
 
@@ -101,7 +98,7 @@ PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
 ║ [REQUEST] before_provider_request payload:
 ║   { ...完整请求 JSON，含 model/messages/tools/thinking/max_tokens... }
 ╠──────────────────────────────────────────────────────────────
-║ [HEADERS] before_provider_headers (不含 Authorization，见注)
+║ [HEADERS] before_provider_headers (不含 Authorization，见注):
 ╠──────────────────────────────────────────────────────────────
 ║ [RESPONSE] after_provider_response (status + headers; no body):
 ║   [0] HTTP 200
@@ -122,16 +119,16 @@ PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
 - 日志不脱敏（含 payload 里的 system prompt 全文、messages），调试结束删除。
 - **完成标准**：四维度均已检查，确认有无问题或明确问题所在。
 
-#### ⑧ 循环改进
+### 8. 循环改进
 
-如果步骤 ⑦ 发现配置问题，进入改进循环：
+如果步骤 7 发现配置问题，进入改进循环：
 
 1. **回退**：配置问题需恢复时，用步骤 5 的备份或 `git diff models.json` 还原。
-2. **调整**：根据步骤 ⑦ 的发现修正 `models.json` 配置：
+2. **调整**：根据步骤 7 的发现修正 `models.json` 配置：
    - `thinkingLevelMap` 档位映射错 → 调整第 4 步得出的映射。
    - `compat` 推断不对 → 显式设置 `compat` 字段覆盖自动推断。
    - 其他字段错 → 按第 3 步重新适配。
-3. **重测**：重复步骤 ⑥——用 `PI_CAPTURE_LOG` 覆盖旧日志，确认问题已解决。
+3. **重测**：重复步骤 6--用 `PI_CAPTURE_LOG` 覆盖旧日志，确认问题已解决。
 4. **上限**：≤3 轮。超过 3 轮仍未通过，**暂停**并向用户报告：
    - 当前抓取发现（哪些维度通过、哪些失败）。
    - 已尝试的调整及其效果。
@@ -143,7 +140,7 @@ PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
 
 - **完成标准**：配置问题已解决 或 超限暂停向用户报告。
 
-#### ⑨ 固定
+### 9. 固定
 
 配置验证通过后固定最终结果：
 
