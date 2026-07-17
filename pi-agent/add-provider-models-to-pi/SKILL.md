@@ -1,7 +1,7 @@
 ---
 name: add-provider-models-to-pi
 disable-model-invocation: true
-description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并适配进 pi 的 models.json（下游消费 models-dev-query）。
+description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并适配进 pi 的 models.json，再通过 agentic 测试验证配置正确性并固定（下游消费 models-dev-query）。
 ---
 
 # Add Provider Models to Pi
@@ -55,7 +55,109 @@ description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并�
 - 来源链接。
 - **完成标准**：brief 已呈现并经用户确认；`models.json` 写入且 `jq empty` 校验通过。
 
+---
+
+### 6–9. 验证阶段：测试-抓取-循环-固定
+
+写入配置后立即验证，使用 `capture.ts` 扩展抓取 pi 实际发送的请求和响应，
+通过 ≤3 轮测试-改进循环收敛到正确配置，最终固定。
+
+**前提**：步骤 5 已写入 `models.json` 且 `jq empty` 通过；`capture.ts` 位于技能 `scripts/capture.ts`。
+
+#### ⑥ 运行 agentic 测试
+
+用 `pi --extension` 临时加载 `capture.ts`，执行一个 agentic 任务（多轮工具调用），
+一次性覆盖四个调试维度：
+
+```bash
+PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
+  pi --extension <skill-dir>/scripts/capture.ts \
+  --print --model <provider>/<model> \
+  '用 bash 工具列出 /tmp 目录下的前 5 个文件名，然后告诉我一共多少个'
+```
+
+- `<skill-dir>` 替换为本技能实际路径（`fd add-provider-models-to-pi` 定位）。
+- 注意用 `--print`（非交互模式），事件自动触发。
+- 日志写入 `PI_CAPTURE_LOG` 指定路径（默认 `/tmp/pi-capture.log`）。
+- **完成标准**：pi 正常完成请求、日志文件已生成非空。
+
+#### ⑦ 抓取调试
+
+读取日志文件，按 CALL 块分析以下四维度：
+
+| 维度 | 请求侧（payload）证据 | 响应侧（message_end）证据 |
+|---|---|---|
+| **基础链路** | payload 含 messages、model 正确 | `stopReason` 非 error，status=200 |
+| **思考参数** | payload 含 `thinking` / `reasoning_effort` 字段 | `thinkingBlocks>0`，thinking 文本可见 |
+| **tool 格式** | payload 含 `tools[]`（function 定义） | `stopReason=toolUse` + `toolCalls` 非空 |
+| **缓存** | — | 多轮请求第 2+ 轮 `cacheRead>0` 命中 |
+
+日志中一个完整 assistant CALL 块的示例结构：
+
+```text
+╔══════════════════════════════════════════════════════════════
+║ CALL #1 — 2026-07-17T01:47:34.244Z  [assistant]
+╠══════════════════════════════════════════════════════════════
+║ [REQUEST] before_provider_request payload:
+║   { ...完整请求 JSON，含 model/messages/tools/thinking/max_tokens... }
+╠──────────────────────────────────────────────────────────────
+║ [HEADERS] before_provider_headers (不含 Authorization，见注)
+╠──────────────────────────────────────────────────────────────
+║ [RESPONSE] after_provider_response (status + headers; no body):
+║   [0] HTTP 200
+║       { "content-type": "text/event-stream", ... }
+╠──────────────────────────────────────────────────────────────
+║ [MESSAGE_END] role=assistant model=... responseModel=...
+║   stopReason=toolUse
+║   usage={"input":6,"output":86,"cacheRead":0,"cacheWrite":12321,...}
+║   content={...thinkingBlocks, toolCalls...}
+╚══════════════════════════════════════════════════════════════
+```
+
+**注意事项**：
+
+- `before_provider_headers` 事件拿不到 Authorization——pi 在事件返回后才注入 auth。
+  该事件是扩展 mutate headers 的入口，非读取实际发送头。调试 API key 靠"跑通与否"判断。
+- user / toolResult 的 `message_end` 单独成精简块（无 provider 段），可忽略。
+- 日志不脱敏（含 payload 里的 system prompt 全文、messages），调试结束删除。
+- **完成标准**：四维度均已检查，确认有无问题或明确问题所在。
+
+#### ⑧ 循环改进
+
+如果步骤 ⑦ 发现配置问题，进入改进循环：
+
+1. **回退**：配置问题需恢复时，用步骤 5 的备份或 `git diff models.json` 还原。
+2. **调整**：根据步骤 ⑦ 的发现修正 `models.json` 配置：
+   - `thinkingLevelMap` 档位映射错 → 调整第 4 步得出的映射。
+   - `compat` 推断不对 → 显式设置 `compat` 字段覆盖自动推断。
+   - 其他字段错 → 按第 3 步重新适配。
+3. **重测**：重复步骤 ⑥——用 `PI_CAPTURE_LOG` 覆盖旧日志，确认问题已解决。
+4. **上限**：≤3 轮。超过 3 轮仍未通过，**暂停**并向用户报告：
+   - 当前抓取发现（哪些维度通过、哪些失败）。
+   - 已尝试的调整及其效果。
+   - 待排查的配置问题。
+   - 回滚：从备份或 git 恢复步骤 5 前的 `models.json`。
+
+一轮定义：一次 `pi --extension capture.ts --print` 运行 + 日志分析。
+同轮内多次运行（修复后重测）仍算同一轮。
+
+- **完成标准**：配置问题已解决 或 超限暂停向用户报告。
+
+#### ⑨ 固定
+
+配置验证通过后固定最终结果：
+
+1. **清除扩展**：调试完成后，确认 `models.json` 未引用 `capture.ts`（无 `--extension` 依赖）。
+2. **校验**：`jq empty /home/cnife/.pi/agent/models.json` 确保 JSON 有效。
+3. **确认**：`pi --list-models 2>&1 | grep <provider>` 确认新模型可见。
+4. **清理**：删除临时日志文件：`rm -f /tmp/pi-verify-<provider>.log`。
+5. **简报**：告知用户：已添加的模型列表、已通过的测试维度、capture.ts 保留位置（后续排查可复用）。
+
+- **完成标准**：models.json 有效、模型在 pi 中可见、日志已清理、用户已被告知结果。
+
 ## 输出
 
 - 修改后的 `models.json`（仅追加/更新目标 provider 的 `models` 数组）。
-- 一份 brief 报告。
+- 验证通过的最终配置（已确认 thinkingLevelMap / compat / 缓存均正确）。
+- 一份包含配置摘要 & 测试结论的 brief 报告。
+- `capture.ts` 扩展（保留于 `scripts/capture.ts`，后续排查可复用的附属资产）。
