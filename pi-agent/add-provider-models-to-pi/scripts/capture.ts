@@ -1,16 +1,21 @@
 /**
- * capture.ts — 抓取 pi 实际发送的请求 payload 和收到的响应。
+ * capture.ts - 抓取 pi 实际发送的请求 payload 和收到的响应，输出结构化 JSONL。
  *
  * 用途：调试 models.json 配置（thinkingLevelMap / compat / 缓存 / tool 格式）。
  * 加载：`pi --extension <path>/capture.ts --print --model <provider/model> "<task>"`
- * 日志：$PI_CAPTURE_LOG（默认 /tmp/pi-capture.log），不脱敏，调试结束删除。
+ * 日志：$PI_CAPTURE_LOG（默认 /tmp/pi-capture.jsonl），不脱敏，调试结束删除。
+ *
+ * 输出格式：一行一个聚合 CALL 块（JSONL）。
+ *   - assistant 块：{callIndex, role, startTime, request:{payload,headers}, responses[], message:{...}}
+ *   - user/toolResult 块：精简结构（callIndex=null，无 request/responses）
+ * 消费：用 jq 提取四维度（见 SKILL.md step 7）。
  *
  * 事件组合（按触发顺序）：
- *   before_provider_headers → before_provider_request → after_provider_response
+ *   before_provider_headers -> before_provider_request -> after_provider_response
  *   message_end（user / assistant / toolResult 都会触发）
  *
- * 配对策略：before_provider_headers 开请求槽 → before_provider_request 填 payload
- *   → after_provider_response 填响应 → assistant message_end flush 完整 CALL 块
+ * 配对策略：before_provider_headers 开请求槽 -> before_provider_request 填 payload
+ *   -> after_provider_response 填响应 -> assistant message_end flush 聚合块
  *   user/toolResult 的 message_end 单独 flush 精简块
  *
  * 已知局限：
@@ -21,7 +26,7 @@ import { appendFileSync, writeFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // ---- 日志路径 ----
-const LOG_PATH = process.env.PI_CAPTURE_LOG ?? "/tmp/pi-capture.log";
+const LOG_PATH = process.env.PI_CAPTURE_LOG ?? "/tmp/pi-capture.jsonl";
 
 // ---- 一次 HTTP 请求的槽 ----
 interface RequestSlot {
@@ -45,19 +50,14 @@ function newSlot(): RequestSlot {
 	};
 }
 
-function appendLog(text: string): void {
-	appendFileSync(LOG_PATH, text, "utf8");
+function writeLine(obj: unknown): void {
+	appendFileSync(LOG_PATH, JSON.stringify(obj) + "\n", "utf8");
 }
-
-// 屏幕分割线
-const TOP = "══════════════════════════════════════════════════════════════";
-const MID = "──────────────────────────────────────────────────────────────";
 
 export default function (pi: ExtensionAPI) {
 	// 启动时清空旧日志：每次新 run 重新开始
 	try {
 		writeFileSync(LOG_PATH, "", "utf8");
-		appendLog(`# pi-capture log\n# started ${new Date().toISOString()}\n# LOG_PATH=${LOG_PATH}\n\n`);
 	} catch (e) {
 		console.error(`[capture.ts] Failed to init log at ${LOG_PATH}:`, e);
 	}
@@ -112,7 +112,7 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const msg = event.message;
 
-			// assistant 消息：消费一个待处理请求槽，产出完整 CALL 块
+			// assistant 消息：消费一个待处理请求槽，产出聚合 CALL 块
 			if (msg.role === "assistant") {
 				const slot = pendingSlots.shift() ?? newSlot(); // 防御性
 				flushAssistantBlock(slot, msg);
@@ -127,103 +127,78 @@ export default function (pi: ExtensionAPI) {
 	});
 }
 
-// ---- assistant 完整 CALL 块 ----
-function flushAssistantBlock(slot: RequestSlot, msg: any): void {
-	const content: any[] = msg.content ?? [];
+// ---- 内容摘要（避免日志爆炸，仅记计数与 toolCall 元信息）----
+function summarizeContent(content: any[]): {
+	textBlocks: number;
+	textChars: number;
+	thinkingBlocks: number;
+	thinkingChars: number;
+	toolCalls: Array<{ name: string; argKeys: string[] }>;
+} {
 	const textBlocks = content.filter((b: any) => b?.type === "text") as Array<{ text: string }>;
-	const thinkingBlocks = content.filter((b: any) => b?.type === "thinking") as Array<{ thinking: string }>;
+	const thinkingBlocks = content.filter((b: any) => b?.type === "thinking") as Array<{
+		thinking: string;
+	}>;
 	const toolCalls = content.filter((b: any) => b?.type === "toolCall") as Array<{
 		name: string;
 		arguments: Record<string, unknown>;
 	}>;
+	return {
+		textBlocks: textBlocks.length,
+		textChars: textBlocks.reduce((s, b) => s + (b.text?.length ?? 0), 0),
+		thinkingBlocks: thinkingBlocks.length,
+		thinkingChars: thinkingBlocks.reduce((s, b) => s + (b.thinking?.length ?? 0), 0),
+		toolCalls: toolCalls.map((t) => ({
+			name: t.name,
+			argKeys: t.arguments ? Object.keys(t.arguments) : [],
+		})),
+	};
+}
 
-	const lines: string[] = [];
-	lines.push(`╔${TOP}`);
-	lines.push(`║ CALL #${slot.callIndex} — ${slot.startTime}  [assistant]`);
-	lines.push(`╠${TOP}`);
-
-	// REQUEST
-	lines.push("║ [REQUEST] before_provider_request payload:");
-	if (slot.payload === undefined) {
-		lines.push("║   (no payload captured — event did not fire?)");
-	} else {
-		lines.push(indentJson(slot.payload, "║   "));
-	}
-
-	lines.push(`╠${MID}`);
-	lines.push("║ [HEADERS] before_provider_headers (不含 Authorization，见注):");
-	if (slot.headers === undefined) {
-		lines.push("║   (no headers captured — event did not fire?)");
-	} else {
-		lines.push(indentJson(slot.headers, "║   "));
-	}
-
-	lines.push(`╠${MID}`);
-	lines.push("║ [RESPONSE] after_provider_response (status + headers; no body):");
-	if (slot.responses.length === 0) {
-		lines.push("║   (no response captured — event did not fire?)");
-	} else {
-		slot.responses.forEach((r, i) => {
-			lines.push(`║   [${i}] HTTP ${r.status}`);
-			lines.push(indentJson(r.headers, "║       "));
-		});
-	}
-
-	lines.push(`╠${MID}`);
-	lines.push(`║ [MESSAGE_END] role=assistant model=${msg.model ?? "—"} responseModel=${msg.responseModel ?? "—"}`);
-	if (msg.stopReason !== undefined) lines.push(`║   stopReason=${msg.stopReason}`);
-	if (msg.errorMessage) lines.push(`║   errorMessage=${msg.errorMessage}`);
-	if (msg.usage) lines.push(`║   usage=${JSON.stringify(msg.usage)}`);
-	lines.push(
-		`║   content=${JSON.stringify({
-			textBlocks: textBlocks.length,
-			textChars: textBlocks.reduce((s, b) => s + (b.text?.length ?? 0), 0),
-			thinkingBlocks: thinkingBlocks.length,
-			thinkingChars: thinkingBlocks.reduce((s, b) => s + (b.thinking?.length ?? 0), 0),
-			toolCalls: toolCalls.map((t) => ({
-				name: t.name,
-				argKeys: t.arguments ? Object.keys(t.arguments) : [],
-			})),
-		})}`,
-	);
-	lines.push("║   rawMessage=");
-	lines.push(indentJson(msg, "║     "));
-
-	lines.push(`╚${TOP}`);
-	lines.push("");
-	appendLog(lines.join("\n") + "\n");
+// ---- assistant 聚合 CALL 块 ----
+function flushAssistantBlock(slot: RequestSlot, msg: any): void {
+	const content: any[] = msg.content ?? [];
+	writeLine({
+		callIndex: slot.callIndex,
+		role: "assistant",
+		startTime: slot.startTime,
+		request: {
+			payload: slot.payload ?? null,
+			headers: slot.headers ?? null,
+		},
+		responses: slot.responses,
+		message: {
+			model: msg.model ?? null,
+			responseModel: msg.responseModel ?? null,
+			stopReason: msg.stopReason ?? null,
+			errorMessage: msg.errorMessage ?? null,
+			usage: msg.usage ?? null,
+			content: summarizeContent(content),
+		},
+	});
 }
 
 // ---- user / toolResult 精简块 ----
 function flushNonAssistantBlock(msg: any): void {
-	const lines: string[] = [];
-	lines.push(`╔${TOP}`);
-	lines.push(`║ CALL #${callCount + 1} — ${new Date().toISOString()}  [${msg.role}]`);
-	lines.push(`║ NOTE: non-assistant message_end (role=${msg.role}) — no provider request`);
-	lines.push(`╠${TOP}`);
+	const entry: Record<string, unknown> = {
+		callIndex: null,
+		role: msg.role,
+		startTime: new Date().toISOString(),
+		note: "non-assistant message_end - no provider request",
+	};
+
 	if (msg.role === "toolResult") {
 		const content: any[] = msg.content ?? [];
-		const textChars = content
-			.filter((b: any) => b?.type === "text")
-			.reduce((s, b: any) => s + (b.text?.length ?? 0), 0);
-		lines.push(`║ toolName=${msg.toolName} toolCallId=${msg.toolCallId} isError=${msg.isError} textChars=${textChars}`);
+		entry.toolName = msg.toolName ?? null;
+		entry.toolCallId = msg.toolCallId ?? null;
+		entry.isError = msg.isError ?? false;
+		entry.textChars = summarizeContent(content).textChars;
 	} else if (msg.role === "user") {
 		const c = msg.content;
-		const preview = typeof c === "string" ? c.slice(0, 200) : JSON.stringify(c).slice(0, 200);
-		lines.push(`║ user preview: ${preview}`);
+		entry.userPreview =
+			typeof c === "string" ? c.slice(0, 200) : JSON.stringify(c).slice(0, 200);
 	}
-	lines.push(`╚${TOP}`);
-	lines.push("");
+
 	// user/toolResult 块不计入 callCount（callCount 只数真实 LLM 调用）
-	appendLog(lines.join("\n") + "\n");
-}
-
-// ---- helpers ----
-
-function indentJson(value: unknown, indent: string): string {
-	const json = JSON.stringify(value, null, 2) ?? String(value);
-	return json
-		.split("\n")
-		.map((l) => `${indent}${l}`)
-		.join("\n");
+	writeLine(entry);
 }

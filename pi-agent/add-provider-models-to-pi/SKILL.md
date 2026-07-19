@@ -1,7 +1,7 @@
 ---
 name: add-provider-models-to-pi
 disable-model-invocation: true
-description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并适配进 pi 的 models.json，再通过 agentic 测试验证配置正确性并固定（下游消费 models-dev-query）。
+description: 往 pi 的 models.json 新增/适配 provider 模型，含取参、思考三层合成、capture.ts 实测验证与固定。
 ---
 
 # Add Provider Models to Pi
@@ -27,6 +27,7 @@ description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并�
 - **完成标准**：每个目标模型的参数源已确定（models.dev 命中 / 官方文档回退），并记下依据。
 
 ### 3. 适配 —— 翻译成 pi 的 model 条目
+按目标 provider 的 `api` 类型查 [`api-adapters.md`](api-adapters.md) 对应节，确认该 api 的 compat 字段集、思考参数机制、off 语义、maxTokens 字段名、缓存与 tool 格式（per-api 事实依据）。
 
 - `id`：用用户给的 id；与源确认是端点实际接受的模型名（方舟支持全小写，也接受控制台原名）。
 - `name`：显示名。
@@ -39,12 +40,12 @@ description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并�
 
 ### 4. 思考三层合成（核心难点）
 
-1. **Layer1 Provider 机制**：端点怎么收思考参数——参考 pi `openai-completions` 对 provider/baseUrl 的 `compat` 推断逻辑（`supportsReasoningEffort`、`thinkingFormat` 等，见 pi 源码 `packages/ai/src/api/openai-completions.ts` 的 `detectCompat` 与 `packages/ai/src/types.ts`），或直接从对应 provider 官方文档确认（`reasoning_effort`？`thinking:{type}`？deepseek/zai/together 哪种格式？）。
+1. **Layer1 Provider 机制**：端点怎么收思考参数--按 `api` 类型查 [`api-adapters.md`](api-adapters.md) 对应节的「思考参数机制」「off 语义」（pi 如何把 `thinkingLevelMap`/`compat` 翻译成实际请求参数）；源码指针亦在该文件。
 2. **Layer2 模型能力**：模型自身支持什么——来自源（`reasoning` 否？toggle？分级？常开？）。
-3. **Layer3 pi 处理**：pi 把统一 level（off/minimal/low/medium/high/xhigh/max）翻译成该 provider API 的规则（靠 `thinkingLevelMap`）：`null` 表示该档位**不支持**（pi 不展示、不可选），非 `null` 字符串表示**支持**且 pi 实际发送该端点值；`off` 特殊——选 `off` 时 pi 不发思考参数（`reasoning_effort` 置 `undefined`），故 `off` 能否选取决于其映射是否非 `null`。
+3. **Layer3 pi 处理**：pi 把统一 level（off/minimal/low/medium/high/xhigh/max）翻译成该 provider API 的规则（靠 `thinkingLevelMap`）：`null` 表示该档位**不支持**（pi 不展示、不可选），非 `null` 字符串表示**支持**且 pi 实际发送该端点值。`off` 行为因 `api` 而异（completions 多数 `thinkingFormat` 发显式关闭信号、responses 发 explicit effort、anthropic 不发参数）--具体见 [`api-adapters.md`](api-adapters.md) 的「off 语义」，**勿假设"off=不发"**。
 
-- 合成：支持关闭则 `off` 映射到非 `null` 值（如 `"none"`，仅作"支持"标记，发送时仍走 `undefined`）；不支持关闭则 `off->null`。其余档位按模型实际支持情况映射成端点接受的 effort/toggle 字符串，不支持者置 `null`。同 provider 已有模型仅作交叉校验，不盲抄。
-- **完成标准**：每个推理模型已列出全部 7 个档位 `off/minimal/low/medium/high/xhigh/max` 的映射值；`null`=不支持，非 `null` 字符串=支持且为端点接受值；`off` 语义已明确（支持关闭->非 `null`，不支持关闭->`null`）。
+- 合成：`off` 映射非 `null`（如 `"none"`）= 支持关闭（pi 可选 off 档，具体发送行为见 [`api-adapters.md`](api-adapters.md)）；`off->null` = 不支持关闭。其余档位按模型实际支持情况映射成端点接受的 effort/toggle 字符串，不支持者置 `null`。同 provider 已有模型仅作交叉校验，不盲抄。
+- **完成标准**：每个推理模型已列出全部 7 个档位 `off/minimal/low/medium/high/xhigh/max` 的映射值；`null`=不支持，非 `null` 字符串=支持且为端点接受值；Layer1 已查 [`api-adapters.md`](api-adapters.md) 对应节（不可凭记忆跳过），`off` 语义已确认（支持关闭->非 `null`，不支持关闭->`null`）。
 
 ### 5. Checkpoint
 
@@ -67,7 +68,7 @@ description: 从 models.dev 或官方 API 文档拉取 provider 模型参数并�
 一次性覆盖四个调试维度：
 
 ```bash
-PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
+PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.jsonl \
   pi --extension <skill-dir>/scripts/capture.ts \
   --print --model <provider>/<model> \
   '用 bash 工具列出 /tmp 目录下的前 5 个文件名，然后告诉我一共多少个'
@@ -75,47 +76,36 @@ PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
 
 - `<skill-dir>` 替换为本技能实际路径（`fd add-provider-models-to-pi` 定位）。
 - 注意用 `--print`（非交互模式），事件自动触发。
-- 日志写入 `PI_CAPTURE_LOG` 指定路径（默认 `/tmp/pi-capture.log`）。
+- 日志写入 `PI_CAPTURE_LOG` 指定路径（默认 `/tmp/pi-capture.jsonl`），格式为 JSONL（一行一个聚合 CALL 块）。
 - **完成标准**：pi 正常完成请求、日志文件已生成非空。
 
 ### 7. 抓取调试
 
-读取日志文件，按 CALL 块分析以下四维度：
+读取 JSONL 日志，用 jq 按 CALL 块分析四维度（每行一个聚合块：assistant 含 `request.payload`/`responses`/`message`，user/toolResult 为精简块 `callIndex=null`）：
 
-| 维度 | 请求侧（payload）证据 | 响应侧（message_end）证据 |
-|---|---|---|
-| **基础链路** | payload 含 messages、model 正确 | `stopReason` 非 error，status=200 |
-| **思考参数** | payload 含 `thinking` / `reasoning_effort` 字段 | `thinkingBlocks>0`，thinking 文本可见 |
-| **tool 格式** | payload 含 `tools[]`（function 定义） | `stopReason=toolUse` + `toolCalls` 非空 |
-| **缓存** | — | 多轮请求第 2+ 轮 `cacheRead>0` 命中 |
+| 维度 | jq 证据（JSONL 字段） |
+|---|---|
+| **基础链路** | `.responses[].status`=200；`.message.stopReason` 非 error |
+| **思考参数** | `.request.payload` 含 `reasoning`/`thinking`/`reasoning_effort`；`.message.content.thinkingBlocks>0` |
+| **tool 格式** | `.request.payload.tools` 非空；`.message.stopReason`=toolUse + `.message.content.toolCalls` 非空 |
+| **缓存** | assistant 块第 2+ 个 `.message.usage.cacheRead>0` |
 
-日志中一个完整 assistant CALL 块的示例结构：
-
-```text
-╔══════════════════════════════════════════════════════════════
-║ CALL #1 — 2026-07-17T01:47:34.244Z  [assistant]
-╠══════════════════════════════════════════════════════════════
-║ [REQUEST] before_provider_request payload:
-║   { ...完整请求 JSON，含 model/messages/tools/thinking/max_tokens... }
-╠──────────────────────────────────────────────────────────────
-║ [HEADERS] before_provider_headers (不含 Authorization，见注):
-╠──────────────────────────────────────────────────────────────
-║ [RESPONSE] after_provider_response (status + headers; no body):
-║   [0] HTTP 200
-║       { "content-type": "text/event-stream", ... }
-╠──────────────────────────────────────────────────────────────
-║ [MESSAGE_END] role=assistant model=... responseModel=...
-║   stopReason=toolUse
-║   usage={"input":6,"output":86,"cacheRead":0,"cacheWrite":12321,...}
-║   content={...thinkingBlocks, toolCalls...}
-╚══════════════════════════════════════════════════════════════
+```bash
+L=/tmp/pi-verify-<provider>.jsonl
+# 基础链路
+jq -c 'select(.role=="assistant") | {callIndex, status: .responses[0].status, stopReason: .message.stopReason, errorMessage: .message.errorMessage}' "$L"
+# 思考参数（请求侧字段 + 响应侧 thinkingBlocks）
+jq -c 'select(.role=="assistant") | {callIndex, reasoning: .request.payload.reasoning, thinking: .request.payload.thinking, reasoningEffort: .request.payload.reasoning_effort, thinkingBlocks: .message.content.thinkingBlocks}' "$L"
+# tool 格式
+jq -c 'select(.role=="assistant") | {callIndex, toolCount: (.request.payload.tools // [] | length), stopReason: .message.stopReason, toolCalls: .message.content.toolCalls}' "$L"
+# 缓存
+jq -c 'select(.role=="assistant") | {callIndex, cacheRead: .message.usage.cacheRead, cacheWrite: .message.usage.cacheWrite}' "$L"
 ```
 
 **注意事项**：
 
-- `before_provider_headers` 事件拿不到 Authorization——pi 在事件返回后才注入 auth。
-  该事件是扩展 mutate headers 的入口，非读取实际发送头。调试 API key 靠"跑通与否"判断。
-- user / toolResult 的 `message_end` 单独成精简块（无 provider 段），可忽略。
+- `before_provider_headers` 事件拿不到 Authorization--pi 在事件返回后才注入 auth。调试 API key 靠"跑通与否"判断。
+- user / toolResult 块 `callIndex=null`（无 provider 请求），分析时用 `select(.role=="assistant")` 过滤。
 - 日志不脱敏（含 payload 里的 system prompt 全文、messages），调试结束删除。
 - **完成标准**：四维度均已检查，确认有无问题或明确问题所在。
 
@@ -147,14 +137,8 @@ PI_CAPTURE_LOG=/tmp/pi-verify-<provider>.log \
 1. **清除扩展**：调试完成后，确认 `models.json` 未引用 `capture.ts`（无 `--extension` 依赖）。
 2. **校验**：`jq empty /home/cnife/.pi/agent/models.json` 确保 JSON 有效。
 3. **确认**：`pi --list-models 2>&1 | grep <provider>` 确认新模型可见。
-4. **清理**：删除临时日志文件：`rm -f /tmp/pi-verify-<provider>.log`。
+4. **清理**：删除临时日志文件：`rm -f /tmp/pi-verify-<provider>.jsonl`。
 5. **简报**：告知用户：已添加的模型列表、已通过的测试维度、capture.ts 保留位置（后续排查可复用）。
 
 - **完成标准**：models.json 有效、模型在 pi 中可见、日志已清理、用户已被告知结果。
 
-## 输出
-
-- 修改后的 `models.json`（仅追加/更新目标 provider 的 `models` 数组）。
-- 验证通过的最终配置（已确认 thinkingLevelMap / compat / 缓存均正确）。
-- 一份包含配置摘要 & 测试结论的 brief 报告。
-- `capture.ts` 扩展（保留于 `scripts/capture.ts`，后续排查可复用的附属资产）。
