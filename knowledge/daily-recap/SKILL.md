@@ -4,7 +4,7 @@ description: 将所有机器上的 Pi 和 OMP 会话整理成主题聚合的结�
 disable-model-invocation: true
 ---
 
-# Daily Recap - 今日工作整理
+# Daily Recap - 每日工作整理
 
 将所有机器上的 Agent 会话整理为一份**主题聚合**的日报，输出兼容 `obsidian-diary` 格式，可直接写入工作日志或个人日记。
 
@@ -14,22 +14,38 @@ disable-model-invocation: true
 
 ## 流程
 
-### Step 0：检查数据来源
+### Step 0：确定目标工作日并检查数据来源
 
-先确认今天有可整理的会话：
+**目标工作日**：以 CST 04:00 为分界，窗口 [工作日 04:00, 次日 04:00)。recap 时刻 ≥04:00 整理今天，<04:00（凌晨）整理昨天；可用 `--date YYYY-MM-DD` 整理指定工作日（跨天补整理）。
+
+两路并行检查：
+
+**本机**：
 
 ```bash
 cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 3
+# 自动选目标工作日；显式：--date 2026-07-18 或位置参数
 ```
 
-- nmem 仍应检查：`nmem --json t list -n 25` - 从 `created_at` 筛选今天。**nmem 命令失败/不可用 -> Hard stop**，见 `references/recovery-guide.md`：询问用户是否仅看本机会话（用 `extract_today.py`）
-- 脚本输出 `total: 0` 且 nmem 也无今日线程 -> 告知用户"今天没有会话记录"并终止
-- 仅 nmem 有数据 -> 纯远程：跳过 Step 1a（本机无会话文件），直接进入 1b 提取远程会话
-- 脚本有输出 -> 进入 Step 1
+脚本按 04:00 窗口精确切分（粗筛 UTC 文件名前缀 + 读 session 行 timestamp 转 CST 判断），输出本机会话证据集。
+
+**远程**（nmem 是 source of truth）：
+
+用 `nmem_list_threads` 列举近期线程（`limit` 调大如 200，或分页跟随 `has_more`/`offset`），按返回的 `date`（导入日期，日级，英文格式如 "Jul 18, 2026"）粗筛目标工作日 ±2 天纳入候选--`date` 非会话时间，**不要用数字日期精确匹配**，按月份+日判断是否在范围内；精确切分在 Step 1b 用 `nmem_read_thread` 的 `messages[0].timestamp`。
+
+**降级**：`nmem_list_threads` 抛 `backend_unreachable`/`timeout`（后端不可达，插件已内部重试）-> Hard stop，见 `references/recovery-guide.md`：询问用户是否仅看本机会话。
+
+**空集反证**：脚本 `total: 0` 且远程也无候选时，先反证--当前 daily-recap 会话本身必然在目标工作日窗口内（除非显式整理历史日期）。若本应有当前会话却 `total: 0`，结果可疑，排查窗口/路径/日期而非直接终止。仅当反证通过（确实无会话）才告知用户"目标工作日没有会话记录"并终止。
+
+**分流**：
+
+- 仅本机有数据 -> 跳过远程，进入 Step 1a
+- 仅远程有候选 -> 纯远程：跳过 Step 1a，直接 1b
+- 两路都有 -> 进入 Step 1
 
 当前日报会话（本次整理本身）也在脚本输出中，无需此时排除--Step 2 分类时归入"当前日报"类，不纳入候选。
 
-**完成条件**：今日会话证据集已确认非空（脚本或 nmem 至少一路有数据），或已告知用户"今天没有会话记录"并终止。
+**完成条件**：目标工作日证据集已确认非空（本机或远程至少一路有候选），或已告知用户"目标工作日没有会话记录"并终止。
 
 ### Step 1：收集并提取
 
@@ -39,19 +55,19 @@ cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 3
 
 Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据集**（标题、时间 CST、项目、消息量、首条用户消息、产出摘要），无需重跑。
 
-参数备忘（Step 0 未带时可补跑）：`--min-msgs N` 跳过小于 N 条消息的 stub 会话；`--exclude <uuid>` 排除指定 session。
+参数备忘（Step 0 未带时可补跑）：`--min-msgs N` 跳过小于 N 条消息的 stub 会话；`--exclude <uuid>` 排除指定 session；`--date YYYY-MM-DD`（或位置参数）指定目标工作日。
 
-#### 1b. 远程会话 - nmem t show
+#### 1b. 远程会话 - nmem_read_thread
 
 对 nmem 中 UUID **不在**脚本输出 `session_id` 列表中的线程，远程提取：
 
-```bash
-nmem --json t show "<thread_id>" --limit 5 --offset 0 --content-limit 1000
-```
+调用 `nmem_read_thread`（`thread_id`，从 `offset: 0` 起），自动按字符预算分页，跟随返回的 `offset=N` hint 续读，直到 `hint` 显示无更多。
 
-每读一段，问：**这段产生了什么可记录的产出？** 提取标题和核心事件摘要。5 条不足时以 `--offset 5` 递增继续读取，直到无新内容；远程会话通常 2-3 段即可覆盖核心产出。
+**精确切分**：首次读取后用 `messages[0].timestamp`（会话开始时间，ISO 8601 带时区）转 CST，判断是否落在目标工作日窗口 [04:00, 次日 04:00)；窗口外会话跳过。
 
-**完成条件**：本机会话（脚本输出）与远程会话（nmem t show）两路证据已收集完毕。
+每读一段，问：**这段产生了什么可记录的产出？** 提取标题和核心事件摘要。远程会话通常 2-3 段即可覆盖核心产出。单条 `nmem_read_thread` 失败（`not_found`/`bad_request`/`timeout`）标记该会话"内容待补充"，不阻塞整体。
+
+**完成条件**：本机会话（脚本输出）与远程会话（nmem_read_thread）两路证据已收集完毕。
 
 ### Step 2：分类
 
@@ -60,7 +76,7 @@ nmem --json t show "<thread_id>" --limit 5 --offset 0 --content-limit 1000
 | 分类 | 判定 | 内容源 |
 |------|------|--------|
 | **本机会话** | UUID 在脚本输出中 | 脚本输出的结构化数据 + 原始 jsonl（需要时） |
-| **远程会话** | UUID 仅在 nmem 中 | nmem t show 分段提取 |
+| **远程会话** | UUID 仅在 nmem 中 | nmem_read_thread 分段提取 |
 | **当前日报** | 标题含"日报/daily-recap"关键词 | 标记"当前日报"并跳过 |
 
 **完成条件**：每个会话已归入本机/远程/当前日报三类之一，无遗漏。

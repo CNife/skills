@@ -3,37 +3,43 @@
 # requires-python = ">=3.11"
 # ///
 """
-extract_today.py - Extract today's session files from Pi and OMP directories.
+extract_today.py - 提取目标工作日窗口内的 Pi/OMP 会话。
+
+工作日以 CST 04:00 为分界，窗口 [工作日 04:00, 次日 04:00)：凌晨 00:00-04:00
+的会话归前一工作日。默认目标工作日由 recap 时刻自动选择（≥04:00 今天 / <04:00
+昨天），可用位置参数或 --date 显式指定。
+
+粗筛用 UTC 文件名日期前缀（窗口 ± 1 天），精确切读 session 行 timestamp 转 CST
+判断是否落在窗口内--文件名 UTC 前缀仅作粗筛，不作切分依据。
 
 Usage:
-    uv run --script extract_today.py                          # today (UTC date)
-    uv run --script extract_today.py 2026-07-09               # specific date
-    uv run --script extract_today.py --min-msgs 3             # skip stub sessions
-    uv run --script extract_today.py --exclude <uuid>         # exclude current session
+    uv run --script extract_today.py                          # 目标工作日（自动）
+    uv run --script extract_today.py 2026-07-09               # 指定工作日
+    uv run --script extract_today.py --date 2026-07-09        # 同上，显式
+    uv run --script extract_today.py --min-msgs 3             # 跳过 stub 会话
+    uv run --script extract_today.py --exclude <uuid>         # 排除指定 session
 
 Output: JSON to stdout with sessions array sorted by timestamp.
 
 Each session has: agent, filepath, session_id, timestamp, time_cst, title,
 cwd, project, msg_count, first_user_msg, last_assistant_summary, error.
 
-Session JSONL is a tree - entries link via id/parentId, with in-place
-branching (see references/pi-session-format.md, references/omp-session-format.md).
-This script reads it linearly: msg_count counts messages across all branches,
-and last_assistant_summary is the physically-last assistant message. This is
-acceptable for --min-msgs stub filtering because stubs never branch, and
-append-only branching keeps the last line close to the current leaf.
+Session JSONL is a tree (id/parentId, in-place branching); this script reads
+it linearly-see references/{pi,omp}-session-format.md for why that suffices.
 """
 
 import json
 import re
 import sys
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # ── config ────────────────────────────────────────────────────────────────
 PI_SESSION_DIR = Path.home() / ".pi" / "agent" / "sessions"
 OMP_SESSION_DIR = Path.home() / ".omp" / "agent" / "sessions"
 CST_OFFSET = timedelta(hours=8)
+CST = ZoneInfo("Asia/Shanghai")
 
 # OMP emits extra entry types (model changes, compaction, branch summaries,
 # extension messages, ...) that Pi does not route through its message stream.
@@ -56,7 +62,7 @@ OMP_SKIP_TYPES = frozenset(
 
 
 def parse_args():
-    args = {"date": date.today().isoformat(), "min_msgs": 0, "exclude": None}
+    args = {"date": None, "min_msgs": 0, "exclude": None}
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
@@ -66,10 +72,90 @@ def parse_args():
         elif arg == "--exclude":
             i += 1
             args["exclude"] = sys.argv[i]
+        elif arg == "--date":
+            i += 1
+            args["date"] = sys.argv[i]
         elif not arg.startswith("--"):
             args["date"] = arg
         i += 1
     return args
+
+
+def workday_window(target_workday: date) -> tuple[datetime, datetime]:
+    """目标工作日的整理窗口 [当日 04:00, 次日 04:00) CST。
+
+    工作日以 CST 04:00 为分界：凌晨 00:00-04:00 的会话归前一工作日。
+    """
+    start = datetime(
+        target_workday.year, target_workday.month, target_workday.day, 4, 0, tzinfo=CST
+    )
+    end = start + timedelta(days=1)
+    return start, end
+
+
+def coarse_utc_prefixes(target_workday: date) -> list[str]:
+    """粗筛用的 UTC 文件名日期前缀集合（工作日窗口 ± 1 天）。
+
+    工作日窗口 CST [04:00, 次日 04:00) 跨两个 UTC 日期；前后各扩 1 天
+    防时区/文件名边界漂移。精确切分由 session_in_window 兜底，粗筛只
+    要不漏（多扫几个文件代价小）。
+    """
+    start_utc = workday_window(target_workday)[0].astimezone(UTC)
+    end_utc = workday_window(target_workday)[1].astimezone(UTC)
+    first = (start_utc - timedelta(days=1)).date()
+    last = (end_utc + timedelta(days=1)).date()
+    prefixes = []
+    d = first
+    while d <= last:
+        prefixes.append(d.isoformat())
+        d += timedelta(days=1)
+    return prefixes
+
+
+def choose_target_workday(now: datetime) -> date:
+    """根据 recap 时刻选择目标工作日：≥04:00 整理今天，<04:00 整理昨天。
+
+    now 应为 CST 时区 aware；naive 视为 CST 本地时间。
+    """
+    local = now.astimezone(CST) if now.tzinfo is not None else now
+    workday = local.date()
+    if local.hour < 4:
+        workday -= timedelta(days=1)
+    return workday
+
+
+def _parse_utc_timestamp(ts: str) -> datetime | None:
+    """Parse a UTC timestamp string to a tz-aware datetime.
+
+    Accepts ISO 8601 (Z or +00:00 suffix, optional milliseconds) and the
+    Pi/OMP filename format (2026-07-09T06-49-49-793Z). Returns None if the
+    string is empty or unparseable.
+    """
+    if not ts:
+        return None
+    m = re.match(r"(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-\d+Z", ts)
+    if m:
+        ts = f"{m.group(1)}T{m.group(2)}:{m.group(3)}:{m.group(4)}+00:00"
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
+def session_in_window(timestamp_utc: str, window: tuple[datetime, datetime]) -> bool:
+    """会话 timestamp 是否落在工作日窗口 [start, end) 内。
+
+    timestamp_utc 是 session 行的 UTC 时间戳（ISO 或文件名格式）。
+    无法解析的时间戳视为不在窗口内（返回 False）。
+    """
+    dt = _parse_utc_timestamp(timestamp_utc)
+    if dt is None:
+        return False
+    start, end = window
+    return start <= dt < end
 
 
 def utc_to_cst(utc_ts: str) -> str:
@@ -93,8 +179,8 @@ def utc_to_cst(utc_ts: str) -> str:
     return f"{cst.hour:02d}:{cst.minute:02d} CST"
 
 
-def find_session_files(agent_dir: Path, date_prefix: str) -> list[Path]:
-    """Find session JSONL files by filename date prefix (not mtime).
+def find_session_files(agent_dir: Path, date_prefixes: list[str]) -> list[Path]:
+    """Find session JSONL files by filename date prefix(es) (not mtime).
 
     OMP stores each session as a <timestamp>_<uuid>/ directory holding a main
     <timestamp>_<uuid>.jsonl plus sub-agent files (__advisor.jsonl, Verify*.jsonl,
@@ -106,7 +192,7 @@ def find_session_files(agent_dir: Path, date_prefix: str) -> list[Path]:
         return []
     files = []
     for fpath in agent_dir.rglob("*.jsonl"):
-        if fpath.name.startswith(date_prefix):
+        if any(fpath.name.startswith(p) for p in date_prefixes):
             files.append(fpath)
     return sorted(files)
 
@@ -252,45 +338,70 @@ def extract_omp_session(filepath: Path) -> dict:
     )
 
 
+def collect_sessions(
+    target_workday: date,
+    pi_dir: Path,
+    omp_dir: Path,
+    *,
+    min_msgs: int = 0,
+    exclude: str | None = None,
+) -> list[dict]:
+    """收集目标工作日窗口内的会话（粗筛多前缀 + 04:00 精确切分）。
+
+    粗筛：coarse_utc_prefixes 给出 UTC 文件名日期前缀，扫到跨 UTC 日期的
+    候选文件。精确切：读 session 行 timestamp，session_in_window 判断是否
+    落在 [工作日 04:00, 次日 04:00) CST。exclude/min_msgs 在切窗口后过滤。
+    """
+    window = workday_window(target_workday)
+    prefixes = coarse_utc_prefixes(target_workday)
+    sessions: list[dict] = []
+
+    for fp in find_session_files(pi_dir, prefixes):
+        s = extract_pi_session(fp)
+        if exclude and s["session_id"] and exclude in s["session_id"]:
+            continue
+        if not session_in_window(s.get("timestamp") or "", window):
+            continue
+        if s["msg_count"] < min_msgs:
+            continue
+        s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
+        s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
+        sessions.append(s)
+
+    for fp in find_session_files(omp_dir, prefixes):
+        s = extract_omp_session(fp)
+        if exclude and s["session_id"] and exclude in s["session_id"]:
+            continue
+        if not session_in_window(s.get("timestamp") or "", window):
+            continue
+        if s["msg_count"] < min_msgs:
+            continue
+        s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
+        s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
+        sessions.append(s)
+
+    sessions.sort(key=lambda x: x.get("timestamp") or "")
+    return sessions
+
+
 # ── main ──────────────────────────────────────────────────────────────────
 
 
 def main():
     args = parse_args()
-    day = args["date"]
-    min_msgs = args["min_msgs"]
-    exclude_uuid = args["exclude"]
+    if args["date"]:
+        target_workday = date.fromisoformat(args["date"])
+    else:
+        target_workday = choose_target_workday(datetime.now(CST))
 
-    pi_files = find_session_files(PI_SESSION_DIR, day)
-    omp_files = find_session_files(OMP_SESSION_DIR, day)
-
-    sessions = []
-
-    for fp in pi_files:
-        s = extract_pi_session(fp)
-        if exclude_uuid and s["session_id"] and exclude_uuid in s["session_id"]:
-            continue
-        if s["msg_count"] < min_msgs:
-            continue
-        s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
-        s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
-        sessions.append(s)
-
-    for fp in omp_files:
-        s = extract_omp_session(fp)
-        if exclude_uuid and s["session_id"] and exclude_uuid in s["session_id"]:
-            continue
-        if s["msg_count"] < min_msgs:
-            continue
-        s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
-        s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
-        sessions.append(s)
-
-    # Sort by timestamp
-    sessions.sort(key=lambda x: x.get("timestamp") or "")
-
-    output = {"date": day, "total": len(sessions), "sessions": sessions}
-
+    sessions = collect_sessions(
+        target_workday,
+        PI_SESSION_DIR,
+        OMP_SESSION_DIR,
+        min_msgs=args["min_msgs"],
+        exclude=args["exclude"],
+    )
+    output = {"date": target_workday.isoformat(), "total": len(sessions), "sessions": sessions}
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
