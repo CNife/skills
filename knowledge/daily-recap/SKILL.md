@@ -1,16 +1,14 @@
 ---
 name: daily-recap
-description: 将所有机器上的 Pi 和 OMP 会话整理成主题聚合的结构化日报，可选写入 Obsidian 工作日志。
+description: 将所有机器上的 Pi 和 OMP 会话整理成主题聚合的结构化日报，写入 Obsidian 工作日志或个人日记。
 disable-model-invocation: true
 ---
 
 # Daily Recap - 每日工作整理
 
-将所有机器上的 Agent 会话整理为一份**主题聚合**的日报，输出兼容 `obsidian-diary` 格式，可直接写入工作日志或个人日记。
+将所有机器上的 Agent 会话整理为一份**主题聚合**的日报，写入 Obsidian 工作日志或个人日记。
 
 **nmem 是 source of truth**：多台机器上的会话通过 nmem 同步，覆盖全部机器的全部会话。本地 jsonl 文件仅存在于当前机器，是**本机会话的内容增强来源**。
-
-脚本路径前缀：`scripts/` 和 `references/` 相对于本 skill 目录。
 
 ## 流程
 
@@ -99,15 +97,15 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 
 ### Step 4：主题聚合并输出日报
 
-对确认的条目进行**主题聚合**--按主题域合并，输出兼容 obsidian-diary 格式：
+对确认的条目进行**主题聚合**--按主题域合并：
 
 1. 语义相近的事件合并到同一个主题域下
-2. 同一主题下的多个事件 -> 1 个 `## 标题` + 子 bullet 展开
+2. 同一主题下的多个事件 -> 1 个标题 + 子 bullet 展开
 3. 每个子 bullet 1-2 行，**只写结论和决策**
 4. 按重要性排序：部署/功能交付在前，基础设施/配置在后，探索/学习最后
 5. 不超过 6 个主题域（理想 3-5 个），无零散单事件段落
 
-事件记录原则（镜像 obsidian-diary Step 3a，以 obsidian-diary 为权威）：
+事件记录原则：
 
 - **实现了功能**：功能名称 + 核心特性 + 关键技术决策
 - **修复了问题**：问题 + 根因 + 修复方式
@@ -117,40 +115,58 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 
 #### 输出模板
 
+标题层级遵循 `references/diary-rules.md` 变体规则（文件名已含日期，文件内一级标题是主题/子系统，不重复日期标题）。每个主题域一个一级标题，按重要性排序：
+
 ```markdown
-# 工作日志 - YYYY-MM-DD
-
-> 项目：`<主项目>`（N 个会话贡献）
-
-## 主题域 1
+# 主题域（work: 子系统名 / personal: 主题标题）
 
 - 关键事件 bullet...
-- 关键事件 bullet...
-
-## 主题域 2
-
 - 关键事件 bullet...
 ```
 
 #### 写入前门禁
 
-日记正文只含主题域标题 + 结论决策 bullet。以下中间产物不得写入（对应 obsidian-diary Blocker ③ + daily-recap 专属）：会话全景表、会话编号、来源标记、消息量、agent 操作日志、验证流程、阶段标记。
+动笔之前，逐项检查以下 3 个 blocker。任一不通过 -> 必须先修正再写入：
 
-**完成条件**：每个确认条目都归入一个主题域，无零散单事件；正文通过写入前门禁。
+| Blocker | 检查项 | 不通过则 |
+|---------|--------|---------|
+| ① 事实虚构 | 每条 bullet 能追溯到会话中的具体对话或工具输出？不写"根据习惯""随手""一般来说"等无来源内容 | 删除虚构内容 |
+| ② 结构散乱 | 按主题域聚合而非按时间平铺？ | 重新聚合主题 |
+| ③ 流程噪音 | 混入了 agent 操作日志（会话全景表、会话编号、来源标记、消息量、Git 提交、验证流程、阶段标记、配置路径）？ | 删除噪音，只保留人的结论和决策 |
 
-### Step 5：可选 - 写入 Obsidian
+**完成条件**：每个确认条目都归入一个主题域，无零散单事件；正文通过 3 blocker 门禁。
 
-询问用户是否需要写入工作日志/个人日记。如果确认：
+### Step 5：写入 Obsidian
 
-1. **先读取**目标日记文件现有内容--当天日志可能已被其他会话部分写入过
-2. **补全式整合**：在现有文件的对应主题段落中追加新内容，已有段落不重写；新增主题域插入合适位置
-3. 优先调用 `obsidian-diary` skill（如已安装且可用），按该 skill 的门禁规则执行
-4. `obsidian-diary` 不可用时，直接用 Edit 工具补全整合
+将聚合后的日报写入 Obsidian 工作日志或个人日记。
 
-**完成条件**：日记已补全式整合写入，或用户选择不写入。
+#### 5a. 选择变体
+
+按候选表去向（工作日志/个人日记）确定变体。变体判断规则见 `references/diary-rules.md`：work（公司项目/部署运维/团队协作）vs personal（个人技术探索/学习/投资/生活/个人开源项目）。混合内容拆分到两个变体分别写入。
+
+#### 5b. 获取日记上下文
+
+```bash
+cd <skill目录> && uv run --script scripts/obsidian-helper.py --vault <work|personal> [--date YYYY-MM-DD]
+```
+
+输出三段：DIARY_PATH/DATE、RECENT（近期 2-3 篇日记摘要，了解写作风格）、TODAY（今日日记全文）。日记不存在时脚本自动从模板创建。整理历史工作日时传 `--date`（与 Step 0 一致），指向目标工作日的日记。
+
+首次配置：脚本输出 `CONFIG_MISSING=true` 时，按打印的示例创建 `~/.config/cnife-skills/obsidian-diary.json`（含各 vault 的 base/diary_dir/template/exclude_meta），询问用户 vault 根目录后填入，重新运行脚本。
+
+#### 5c. 补全式整合写入
+
+**先读后写**：基于 TODAY 全文补全整合，不覆盖。新内容能塞进已有章节的不新开标题（Blocker ② 的「已有章节对齐」在此检查，Step 4 时日记未读无法判断）：
+
+1. 已有章节 -> 在该章节末尾追加新 bullet，不重写已有内容
+2. 新章节 -> 插入到已有章节之后（待办块之后，如有），按重要性排序
+3. 用 Edit（patch）工具写入
+
+**完成条件**：日记已补全式整合写入，新内容已与已有章节对齐。
 
 ## 参考
 
 - Pi 会话 JSONL 格式 -> `references/pi-session-format.md`
 - OMP 会话 JSONL 格式 -> `references/omp-session-format.md`
+- 日记格式规则 -> `references/diary-rules.md`
 - 故障恢复 -> `references/recovery-guide.md`

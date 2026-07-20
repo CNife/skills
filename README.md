@@ -11,8 +11,7 @@ pi-agent/            Pi Agent 生态专用技能
 
 knowledge/           个人知识系统
 ├── nmem-maintenance/  Nowledge Mem 知识库巡检与事件处理
-├── obsidian-diary/    会话总结 -> Obsidian 工作日志/日记
-└── daily-recap/       今日会话聚合成日报，可选写入 Obsidian
+└── daily-recap/       今日会话聚合成日报，写入 Obsidian 工作日志/日记
 
 utility/             通用工具（与代理无关）
 ├── models-dev-query/    AI 模型规格查询
@@ -43,8 +42,7 @@ bunx skills add CNife/skills --full-depth
 | Skill | 描述 |
 |-------|------|
 | [nmem-maintenance](./knowledge/nmem-maintenance) | Nowledge Mem 知识库巡检--检查服务状态、审查待处理事件、分类处理陈旧结晶/重复记忆/矛盾 |
-| [obsidian-diary](./knowledge/obsidian-diary) | 将会话内容总结到 Obsidian 工作日志/日记中，管理待办事项 |
-| [daily-recap](./knowledge/daily-recap) | 整理今日工作内容 - 搜索 Nowledge Mem 线程、检查会话文件、查 git 提交，按主题聚合生成结构化日报，可选写入 Obsidian |
+| [daily-recap](./knowledge/daily-recap) | 整理所有机器上的 Pi/OMP 会话，按主题聚合成结构化日报，写入 Obsidian 工作日志或个人日记 |
 
 ### utility/
 

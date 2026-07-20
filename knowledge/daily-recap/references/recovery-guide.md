@@ -26,4 +26,4 @@
 |------|------|------|
 | 会话 jsonl 文件不可读 | 权限问题或路径变更 | 该会话标记 error，内容降级为通过 `nmem_read_thread` 获取摘要 |
 | `extract_today.py` `total:0` 但当前会话应在窗口 | 窗口/路径/日期配置可疑 | 反证排查（见 SKILL.md Step 0），不直接终止 |
-| `obsidian-diary` 不可用 | skill 未安装在当前 agent | 直接用 Edit 工具补全整合日记条目，见 Step 5 |
+| `obsidian-helper.py` 失败/配置缺失 | 脚本未找到或 `CONFIG_MISSING=true` | 询问用户 vault 路径，创建 `~/.config/cnife-skills/obsidian-diary.json` 后重试；写入降级为直接 Edit 文件 |

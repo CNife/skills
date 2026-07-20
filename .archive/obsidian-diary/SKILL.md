@@ -1,6 +1,8 @@
 ---
 name: obsidian-diary
 description: 将会话内容按主题聚合写入 Obsidian 工作日志或个人日记，并管理待办。当用户说「记录一下」「写日记」「更新待办」等要求记录时，或在会话末尾出现结构化结论/部署完成/调研成果时加载此技能，主动询问用户是否记录。
+metadata:
+  internal: true
 ---
 
 # Obsidian 日记与待办管理
