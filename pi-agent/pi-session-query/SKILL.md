@@ -1,12 +1,12 @@
 ---
 name: pi-session-query
-description: 把一个 Pi Agent 会话记录（JSONL）交给分析会话时，提供会话查询原语库 + 运行器，正确还原树形结构与完整内容块，供 AI 写查询脚本组合完成轨迹分析、工具调用排查等复杂分析。与 daily-recap 互补（后者线性提取摘要，本技能完整树形解析）。
+description: Pi 会话 JSONL 查询原语库 + 运行器：树形解析会话，供查询脚本组合完成会话分析。
 disable-model-invocation: true
 ---
 
 # Pi Session Query - 会话查询原语库
 
-把一个 Pi Agent 会话记录文件（JSONL）解析成 `Session` 对象，暴露五组查询原语，供分析会话（AI）写查询脚本组合完成任意复杂分析：还原主路径对话流、查看思考内容、配对工具调用与结果、对比分支差异、定位压缩点、统计 token 消耗等。
+把一个 Pi Agent 会话记录文件（JSONL）解析成 `Session` 对象，暴露五组查询原语，供查询脚本组合完成任意复杂会话分析。
 
 ## 定位
 
@@ -18,8 +18,6 @@ disable-model-invocation: true
 | 范围 | 批量、跨文件、跨机器 | 单文件、全 block 还原 |
 | 产出 | 摘要（标题/时间/首末消息） | 原语组合的任意查询 |
 | 树还原 | 有意不还原（只要摘要） | 正确还原主路径 + 分支 |
-
-分析方临时手写解析逻辑的典型错误：线性逐行解析，把被放弃的分支与最终主路径混在一起。本技能提供正确的会话操作原语，避免这类错误。
 
 ## 调用形态
 
@@ -37,7 +35,7 @@ uv run --script scripts/query.py <会话 jsonl 路径> <查询脚本路径>
 |------|------|
 | `s` | 已载入的 `Session` 对象（会话文件已解析） |
 | `Session` | `Session` 类（可重新构造） |
-| `encode` | TOON 编码（toon-format 不可用时降级 JSON） |
+| `encode` | TOON 编码（toon-format 不可用或编码异常时降级 JSON + stderr 警告） |
 | `decode` | TOON 解码 |
 | `truncate` | 截断长文本，附 size hint |
 | `__name__` | `"__main__"`（`if __name__ == "__main__"` 守卫生效） |
@@ -59,7 +57,7 @@ uv run --script scripts/query.py <会话 jsonl 路径> <查询脚本路径>
 
 | 方法 | 返回 |
 |------|------|
-| `s.leaf()` | 末端节点：物理最后一条 entry（与 Pi 源码 `buildSessionPath` 默认一致） |
+| `s.leaf()` | 末端节点：物理最后一条 entry（不用"最后 assistant 消息"启发式——会话以 user/toolResult 结束时会错；与 Pi 源码 `buildSessionPath` 一致） |
 | `s.entry(id)` | 单个 entry 摘要 |
 | `s.parent_chain(id)` | 从 id 回溯到根的链（self-first） |
 | `s.children(id)` | id 的直接子节点 |
@@ -71,10 +69,10 @@ uv run --script scripts/query.py <会话 jsonl 路径> <查询脚本路径>
 
 | 方法 | 返回 |
 |------|------|
-| `s.path(leaf_id=None)` | root-to-leaf 完整链（含 compaction 等所有 entry）。默认 leaf 为物理最后一条 |
+| `s.path(leaf_id=None)` | root-to-leaf 完整链，按 timestamp 序（含 compaction 等所有 entry）。默认 leaf 为物理最后一条 |
 | `s.context_entries(leaf_id=None)` | compaction-aware 活跃 entry 列表（Pi `buildContextEntries` 语义：省略最后一个 compaction 的 `firstKeptEntryId` 之前的条目） |
 | `s.messages(leaf_id=None, *, role=None, tool=None, content=None, time=None)` | path 上 message 摘要，可按角色/工具名/正文子串/时间范围过滤（`time=(start, end)` ISO 8601，按字典序） |
-| `s.blocks(entry_id)` | 单个 message entry 的 content[] block（thinking/text/toolCall/image；image 只给 mimeType+size，不返回 base64） |
+| `s.blocks(entry_id)` | content[] block：assistant 给 thinking/text/toolCall/image，toolResult 给 text/image；image 只给 mimeType+size，不返回 base64 |
 | `s.tool_pairs(leaf_id=None)` | path 上 toolCall ↔ toolResult 按 call id 配对（精确匹配，含复合 id） |
 
 ### 分析专用
@@ -126,8 +124,6 @@ if len(leaves) >= 2:
 print(encode(s.compaction_points()))
 ```
 
-查询脚本可写循环、条件、聚合等任意复杂逻辑，不受固定查询能力限制。
-
 ## 错误与退出码
 
 | 场景 | exit | stdout |
@@ -135,20 +131,12 @@ print(encode(s.compaction_points()))
 | 用法错误（参数数不对） | 2 | `{"error":true,"type":"usage",...}` |
 | 会话/查询脚本文件不存在 | 2 | `{"error":true,"type":"file_not_found",...}` |
 | 缺 session header | 1 | `{"error":true,"type":"missing_header",...}` |
-| v1/v2 会话（仅支持 v3） | 1 | `{"error":true,"type":"unsupported_version","version":N,...}` |
+| v1/v2 会话（v3 only：v1 线性无 id/parentId） | 1 | `{"error":true,"type":"unsupported_version","version":N,...}` |
 | 文件无有效条目 | 1 | `{"error":true,"type":"empty",...}` |
 | 查询脚本抛异常 | 1 | `{"error":true,"type":"query_error","traceback":...}` |
 | 某行 JSON 无法解析 | 0 | 跳过该行，stderr 警告 |
 
 错误输出固定用 JSON（不依赖 toon），确保可解析。查询脚本返回空结果是 `[]`/`{total:0}` 等明确空状态，非报错。
-
-## 设计要点
-
-- **末端节点语义**：物理最后一条 entry（`entries[-1]`），不是"最后一个 assistant text 消息"--后者是次优启发式，会话以 user/toolResult/纯 toolCall 结束时会定位错。与 Pi 源码 `buildSessionPath` 的 `leaf ??= entries[entries.length - 1]` 一致
-- **主路径算法**：取末端节点回溯 parentId 到根，按 timestamp 序。正确处理压缩（path 返回完整链含 compaction 标记；context_entries 按 Pi `buildContextEntries` 语义省略被压缩条目）
-- **block 类型**：完整支持 thinking/text/toolCall/image（assistant），text/image（toolResult）。image 不返回 base64 data（截断原则）
-- **v3 only**：仅支持 v3 会话（树形 id/parentId）；v1（线性、无 id/parentId）与 v2 文件拒绝并结构化错误指出 version，避免静默错误结果
-- **TOON fallback**：toon-format 导入失败或编码异常时降级 JSON 输出并 stderr 警告，不崩溃
 
 ## 脚本位置
 
