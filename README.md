@@ -6,8 +6,10 @@
 
 ```text
 pi-agent/            Pi Agent 生态专用技能
-├── pi-trending/           Pi 生态热门包发现
-└── search-pi-extensions/  按需求检索 pi 扩展/包
+├── pi-trending/                Pi 生态热门包发现
+├── search-pi-extensions/       按需求检索 pi 扩展/包
+├── add-provider-models-to-pi/  从 provider 拉模型适配进 pi
+└── pi-session-query/           Pi 会话树形查询原语库
 
 knowledge/           个人知识系统
 ├── nmem-maintenance/  Nowledge Mem 知识库巡检与事件处理
@@ -36,6 +38,7 @@ bunx skills add CNife/skills --full-depth
 | [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 - 从 npm registry 计算趋势分 |
 | [search-pi-extensions](./pi-agent/search-pi-extensions) | 按需求检索 pi 扩展/包 - npm 关键词检索 + GitHub 信号质量评估 |
 | [add-provider-models-to-pi](./pi-agent/add-provider-models-to-pi) | 从源 provider（models.dev/官方文档）拉取参数并适配进 pi 的 models.json |
+| [pi-session-query](./pi-agent/pi-session-query) | Pi 会话树形查询原语库 - 还原主路径/分支/压缩/工具配对，供 AI 写查询脚本做复杂分析 |
 
 ### knowledge/
 
