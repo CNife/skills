@@ -21,15 +21,15 @@ disable-model-invocation: true
 **本机**：
 
 ```bash
-cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 3
-# 自动选目标工作日；显式：--date 2026-07-18 或位置参数
+cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 10
+# 跳过 stub 会话；仍含大量 title=null 会话则一次性提到 15，不反复重跑
 ```
 
 脚本按 04:00 窗口精确切分（粗筛 UTC 文件名前缀 + 读 session 行 timestamp 转 CST 判断），输出本机会话证据集。
 
 **远程**（nmem 是 source of truth）：
 
-用 `nmem_list_threads` 列举近期线程（`limit` 调大如 200，或分页跟随 `has_more`/`offset`），按返回的 `date`（导入日期，日级，英文格式如 "Jul 18, 2026"）粗筛目标工作日 ±2 天纳入候选--`date` 非会话时间，**不要用数字日期精确匹配**，按月份+日判断是否在范围内；精确切分在 Step 1b 用 `nmem_read_thread` 的 `messages[0].timestamp`。
+用 `nmem_list_threads` 列举近期线程（`limit` 调大如 200，或分页跟随 `has_more`/`offset`），按返回的 `date`（导入日期，日级，英文格式如 "Jul 18, 2026"）粗筛目标工作日 ±2 天纳入候选--`date` 非会话时间，**不要用数字日期精确匹配**，按月份+日判断是否在范围内；精确切分推迟到 Step 4 远程条目核实（批准后定向 `nmem_read_thread`）。
 
 **降级**：`nmem_list_threads` 抛 `backend_unreachable`/`timeout`（后端不可达，插件已内部重试）-> Hard stop，见 `references/recovery-guide.md`：询问用户是否仅看本机会话。
 
@@ -53,19 +53,15 @@ cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 3
 
 Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据集**（标题、时间 CST、项目、消息量、首条用户消息、产出摘要），无需重跑。
 
-参数备忘（Step 0 未带时可补跑）：`--min-msgs N` 跳过小于 N 条消息的 stub 会话；`--exclude <uuid>` 排除指定 session；`--date YYYY-MM-DD`（或位置参数）指定目标工作日。
+参数备忘（Step 0 未带时可补跑）：`--exclude <uuid>` 排除指定 session；`--date YYYY-MM-DD`（或位置参数）指定目标工作日。
 
-#### 1b. 远程会话 - nmem_read_thread
+#### 1b. 远程会话识别（summary 级）
 
-对 nmem 中 UUID **不在**脚本输出 `session_id` 列表中的线程，远程提取：
+**UUID diff**：nmem 线程 id 去 `pi-`/`omp-` 前缀，与本机脚本输出 `session_id` 列表比对，差集即真远程会话（其他机器执行、本机无 jsonl）。
 
-调用 `nmem_read_thread`（`thread_id`，从 `offset: 0` 起），自动按字符预算分页，跟随返回的 `offset=N` hint 续读，直到 `hint` 显示无更多。
+对真远程会话，用 `nmem_list_threads` 已返回的 `title`/`summary` 作为初步证据列出，标「📡 待核实」--summary 足以判断去向与主题域，但不含会话时间和原始对话，写入前需核实（Step 4）。
 
-**精确切分**：首次读取后用 `messages[0].timestamp`（会话开始时间，ISO 8601 带时区）转 CST，判断是否落在目标工作日窗口 [04:00, 次日 04:00)；窗口外会话跳过。
-
-每读一段，问：**这段产生了什么可记录的产出？** 提取标题和核心事件摘要。远程会话通常 2-3 段即可覆盖核心产出。单条 `nmem_read_thread` 失败（`not_found`/`bad_request`/`timeout`）标记该会话"内容待补充"，不阻塞整体。
-
-**完成条件**：本机会话（脚本输出）与远程会话（nmem_read_thread）两路证据已收集完毕。
+**完成条件**：真远程会话已识别并列出（summary 级），进入 Step 2 分类。
 
 ### Step 2：分类
 
@@ -74,7 +70,7 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 | 分类 | 判定 | 内容源 |
 |------|------|--------|
 | **本机会话** | UUID 在脚本输出中 | 脚本输出的结构化数据 + 原始 jsonl（需要时） |
-| **远程会话** | UUID 仅在 nmem 中 | nmem_read_thread 分段提取 |
+| **远程会话** | UUID 仅在 nmem 中 | nmem summary（📡 待核实，Step 4 核实补充） |
 | **当前日报** | 标题含"日报/daily-recap"关键词 | 标记"当前日报"并跳过 |
 
 **完成条件**：每个会话已归入本机/远程/当前日报三类之一，无遗漏。
@@ -96,6 +92,17 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 **完成条件**：用户已确认或修正每个候选条目的去向。
 
 ### Step 4：主题聚合并输出日报
+
+#### 远程条目核实（批准后、聚合前）
+
+对用户批准的、来源含 📡 的条目，逐个 `nmem_read_thread`（`thread_id`，`offset: 0` 起，跟随 `offset=N` hint 续读）：
+
+1. **时间核实**：`messages[0].timestamp` 转 CST，确认落在目标工作日窗口 [04:00, 次日 04:00)。窗口外剔除，输出注明「剔除：时间窗口外」。
+2. **内容提取**：提取 summary 没有的结构化细节（关键决策、参数、产出物），供 bullet 追溯。
+
+通常 2-3 段覆盖核心产出。单条失败标记「内容待补充」，不阻塞。
+
+**完成条件**：每个批准的远程条目已通过时间核实，bullet 有原文支撑。
 
 对确认的条目进行**主题聚合**--按主题域合并：
 
@@ -130,7 +137,7 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 
 | Blocker | 检查项 | 不通过则 |
 |---------|--------|---------|
-| ① 事实虚构 | 每条 bullet 能追溯到会话中的具体对话或工具输出？不写"根据习惯""随手""一般来说"等无来源内容 | 删除虚构内容 |
+| ① 事实虚构 | 每条 bullet 能追溯到会话中的具体对话或工具输出？远程条目需 `nmem_read_thread` 原文支撑，summary 不算可追溯来源。不写“根据习惯”“随手”“一般来说”等无来源内容 | 删除虚构内容 |
 | ② 结构散乱 | 按主题域聚合而非按时间平铺？ | 重新聚合主题 |
 | ③ 流程噪音 | 混入了 agent 操作日志（会话全景表、会话编号、来源标记、消息量、Git 提交、验证流程、阶段标记、配置路径）？ | 删除噪音，只保留人的结论和决策 |
 
