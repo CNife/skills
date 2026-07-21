@@ -22,8 +22,17 @@ disable-model-invocation: true
 ## 调用形态
 
 ```bash
-uv run --script scripts/query.py <会话 jsonl 路径> <查询脚本路径>
+# session：jsonl 路径 或 session id（自动去 ~/.pi/agent/sessions glob）
+# script：路径、-（stdin）、-c/--code CODE（内联）
+uv run --script scripts/query.py <session> <查询脚本路径>
+uv run --script scripts/query.py <session> -
+uv run --script scripts/query.py <session> -c '<查询脚本源码>'
+
+# session id 自省（agent 场景，省去手找文件路径）
+uv run --script scripts/query.py $PI_SUBAGENT_PARENT_SESSION -c 'print(s.title())'
 ```
+
+session id 解析：参数非已存在文件、且不含路径分隔符/不以 `.jsonl` 结尾时视为 id，去 `~/.pi/agent/sessions/`（或环境变量 `PI_SESSIONS_DIR`）递归 glob `*_<id>.jsonl`。命中多个报 `ambiguous_session`。
 
 运行器解析会话成 `Session` 对象 `s`，注入到查询脚本命名空间并 exec。查询脚本自行 `print` 输出（通常 `print(encode(...))` 用 TOON 省 token）。
 
@@ -39,6 +48,7 @@ uv run --script scripts/query.py <会话 jsonl 路径> <查询脚本路径>
 | `decode` | TOON 解码 |
 | `truncate` | 截断长文本，附 size hint |
 | `__name__` | `"__main__"`（`if __name__ == "__main__"` 守卫生效） |
+| `__file__` | 脚本来源标签：路径、`<stdin>`、`<inline>`（traceback 定位用） |
 
 查询脚本可用标准库 + 注入的原语 + toon；第三方库 MVP 不支持。
 
@@ -128,8 +138,10 @@ print(encode(s.compaction_points()))
 
 | 场景 | exit | stdout |
 |------|:----:|--------|
-| 用法错误（参数数不对） | 2 | `{"error":true,"type":"usage",...}` |
+| 用法错误（参数缺失/互斥） | 2 | `{"error":true,"type":"usage",...}` |
 | 会话/查询脚本文件不存在 | 2 | `{"error":true,"type":"file_not_found",...}` |
+| session id 无匹配文件 | 2 | `{"error":true,"type":"session_not_found",...}` |
+| session id 匹配多个文件 | 2 | `{"error":true,"type":"ambiguous_session","matches":[...],...}` |
 | 缺 session header | 1 | `{"error":true,"type":"missing_header",...}` |
 | v1/v2 会话（v3 only：v1 线性无 id/parentId） | 1 | `{"error":true,"type":"unsupported_version","version":N,...}` |
 | 文件无有效条目 | 1 | `{"error":true,"type":"empty",...}` |

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -597,14 +598,28 @@ def test_truncate_adds_size_hint():
 
 
 def _run_runner(
-    jsonl: Path, script: Path | None = None, *, extra_args: list[str] | None = None
+    jsonl: Path | str,
+    script: Path | None = None,
+    *,
+    extra_args: list[str] | None = None,
+    stdin: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     args = ["uv", "run", "--script", str(QUERY_PY), str(jsonl)]
     if script is not None:
         args.append(str(script))
     if extra_args:
         args.extend(extra_args)
-    return subprocess.run(args, capture_output=True, text=True, cwd=SCRIPT_DIR.parent, timeout=120)
+    run_env = None if env is None else {**os.environ, **env}
+    return subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        cwd=SCRIPT_DIR.parent,
+        timeout=120,
+        input=stdin,
+        env=run_env,
+    )
 
 
 def test_runner_usage_error_exit2(tmp_path):
@@ -694,6 +709,108 @@ def test_runner_v1_rejected_exit1(tmp_path):
     obj = json.loads(r.stdout)
     assert obj["type"] == "unsupported_version"
     assert obj["version"] == 1
+
+
+# ── Slice 7: 脚本传入方式与 session id 解析 ──────────────────────────────
+
+
+def _sessions_tree(tmp_path: Path, session_id: str) -> Path:
+    """构造 Pi 风格 sessions 目录：<root>/<slug>/<ts>_<id>.jsonl，返回 root。
+
+    文件内容复用 _forked_session，但 header id 改写为 session_id，使文件名 id
+    与内容 id 一致（便于测试断言 s.header()['id'] == session_id）。
+    """
+    root = tmp_path / "sessions"
+    sub = root / "proj"
+    sub.mkdir(parents=True)
+    raw_lines = _forked_session(tmp_path).read_text(encoding="utf-8").splitlines()
+    header = json.loads(raw_lines[0])
+    header["id"] = session_id
+    raw_lines[0] = json.dumps(header, ensure_ascii=False)
+    (sub / f"2024-01-01T00-00-00Z_{session_id}.jsonl").write_text(
+        "\n".join(raw_lines) + "\n", encoding="utf-8"
+    )
+    return root
+
+
+def test_runner_inline_code(tmp_path):
+    """-c/--code 内联脚本：注入的 s 可用。"""
+    jsonl = _forked_session(tmp_path)
+    r = _run_runner(jsonl, extra_args=["-c", "print(s.leaf()['id'])"])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "b3"
+
+
+def test_runner_inline_code_long_form(tmp_path):
+    jsonl = _forked_session(tmp_path)
+    r = _run_runner(jsonl, extra_args=["--code", "print(s.header()['id'])"])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "s1"
+
+
+def test_runner_stdin_script(tmp_path):
+    """- 表 stdin：从 stdin 读脚本源。"""
+    jsonl = _forked_session(tmp_path)
+    r = _run_runner(jsonl, script=Path("-"), stdin="print(s.leaf()['id'])\n")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "b3"
+
+
+def test_runner_session_id_resolves(tmp_path):
+    """session 传 id：去 PI_SESSIONS_DIR glob *_<id>.jsonl 自动定位。"""
+    sid = "019fabcd-0000-0000-0000-000000000000"
+    root = _sessions_tree(tmp_path, sid)
+    r = _run_runner(
+        sid, extra_args=["-c", "print(s.header()['id'])"], env={"PI_SESSIONS_DIR": str(root)}
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == sid
+
+
+def test_runner_session_not_found_exit2(tmp_path):
+    """id 无匹配 -> session_not_found exit 2。"""
+    root = _sessions_tree(tmp_path, "real-id")
+    r = _run_runner("no-such-id", extra_args=["-c", "print(1)"], env={"PI_SESSIONS_DIR": str(root)})
+    assert r.returncode == 2
+    obj = json.loads(r.stdout)
+    assert obj["type"] == "session_not_found"
+    assert obj["id"] == "no-such-id"
+
+
+def test_runner_ambiguous_session_exit2(tmp_path):
+    """同 id 多文件 -> ambiguous_session exit 2，列出候选。"""
+    root = tmp_path / "sessions"
+    for sub in ("dir1", "dir2"):
+        d = root / sub
+        d.mkdir(parents=True)
+        (d / "2024-01-01T00-00-00Z_dup.jsonl").write_text(
+            _forked_session(tmp_path).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    r = _run_runner("dup", extra_args=["-c", "print(1)"], env={"PI_SESSIONS_DIR": str(root)})
+    assert r.returncode == 2
+    obj = json.loads(r.stdout)
+    assert obj["type"] == "ambiguous_session"
+    assert len(obj["matches"]) == 2
+
+
+def test_runner_script_and_code_mutually_exclusive(tmp_path):
+    """同时给脚本路径和 -c -> usage exit 2。"""
+    jsonl = _forked_session(tmp_path)
+    script = tmp_path / "q.py"
+    script.write_text("print('hi')")
+    r = _run_runner(jsonl, script, extra_args=["-c", "print(1)"])
+    assert r.returncode == 2
+    obj = json.loads(r.stdout)
+    assert obj["type"] == "usage"
+
+
+def test_runner_no_script_no_code(tmp_path):
+    """只传 session、无 script/code -> usage exit 2（script nargs='?' 新分支）。"""
+    jsonl = _forked_session(tmp_path)
+    r = _run_runner(jsonl)
+    assert r.returncode == 2
+    obj = json.loads(r.stdout)
+    assert obj["type"] == "usage"
 
 
 # ── 真实数据 smoke test ──────────────────────────────────────────────────────

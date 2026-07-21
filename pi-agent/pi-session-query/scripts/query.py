@@ -21,7 +21,10 @@
 
 from __future__ import annotations
 
+import argparse
+import glob
 import json
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -105,12 +108,16 @@ def _msg_has_tool(message: dict, tool: str) -> bool:
 
 
 class SessionError(Exception):
-    """会话解析/查询错误，携带 type 供运行器结构化输出。"""
+    """会话解析/查询错误，携带 type 与 exit_code 供运行器结构化输出。
 
-    def __init__(self, type: str, message: str, **detail):
+    exit_code 默认 1（数据层错误）；参数层错误（文件缺失、id 歧义）传 exit_code=2。
+    """
+
+    def __init__(self, type: str, message: str, *, exit_code: int = 1, **detail):
         super().__init__(message)
         self.type = type
         self.message = message
+        self.exit_code = exit_code
         self.detail = detail
 
 
@@ -573,27 +580,96 @@ def _emit_error(type: str, message: str, *, exit_code: int = 1, **detail) -> Non
     sys.exit(exit_code)
 
 
-def main() -> None:
-    args = sys.argv[1:]
-    if len(args) != 2:
-        _emit_error("usage", "用法: query.py <会话 jsonl 路径> <查询脚本路径>", exit_code=2)
-    jsonl_path, script_path = args
-    if not Path(jsonl_path).is_file():
-        _emit_error("file_not_found", f"会话文件不存在: {jsonl_path}", exit_code=2, path=jsonl_path)
-    if not Path(script_path).is_file():
-        _emit_error(
-            "file_not_found", f"查询脚本不存在: {script_path}", exit_code=2, path=script_path
+def _sessions_root() -> Path:
+    """Pi 会话存储根目录：环境变量 PI_SESSIONS_DIR 覆盖，默认 ~/.pi/agent/sessions。"""
+    env = os.environ.get("PI_SESSIONS_DIR")
+    return Path(env).expanduser().resolve() if env else Path.home() / ".pi" / "agent" / "sessions"
+
+
+def _resolve_session(arg: str) -> Path:
+    """session 参数解析：文件路径直接用；否则当 session id 去 sessions 目录 glob。
+
+    启发式区分路径与 id：含路径分隔符或以 .jsonl 结尾视为路径（不存在报
+    file_not_found）；否则当 id（Pi 文件名 ``<ts>_<id>.jsonl``，glob
+    ``*_<id>.jsonl``，命中 0 报 session_not_found，多个报 ambiguous_session，
+    均 exit 2）。
+    """
+    p = Path(arg).expanduser()
+    if p.is_file():
+        return p
+    looks_like_path = "/" in arg or "\\" in arg or arg.endswith(".jsonl")
+    if looks_like_path:
+        raise SessionError("file_not_found", f"会话文件不存在: {arg}", exit_code=2, path=arg)
+    root = _sessions_root()
+    if not root.is_dir():
+        raise SessionError(
+            "session_not_found",
+            f"session 目录不存在且 {arg!r} 非文件路径",
+            exit_code=2,
+            arg=arg,
+            searched=str(root),
         )
+    matches = sorted(root.rglob(f"*_{glob.escape(arg)}.jsonl"))
+    if not matches:
+        raise SessionError(
+            "session_not_found", f"未找到 session: {arg}", exit_code=2, id=arg, searched=str(root)
+        )
+    if len(matches) > 1:
+        raise SessionError(
+            "ambiguous_session",
+            f"session id 匹配多个文件: {arg}",
+            exit_code=2,
+            id=arg,
+            matches=[str(m) for m in matches],
+        )
+    return matches[0]
+
+
+class _ArgParser(argparse.ArgumentParser):
+    """argparse 出错时走结构化 JSON 输出（而非默认 stderr usage + exit 2）。"""
+
+    def error(self, message: str) -> None:  # type: ignore[override]
+        _emit_error("usage", message, exit_code=2)
+
+
+def main() -> None:
+    parser = _ArgParser(prog="query.py", description="Pi 会话查询原语库 + 运行器")
+    parser.add_argument("session", help="会话 jsonl 路径或 session id")
+    parser.add_argument("script", nargs="?", help="查询脚本路径，- 表 stdin")
+    parser.add_argument("-c", "--code", dest="code", default=None, help="内联查询脚本")
+    args = parser.parse_args()
+
+    if args.code is not None and args.script is not None:
+        _emit_error("usage", "不能同时指定查询脚本路径/stdin 与 -c/--code", exit_code=2)
+    if args.code is None and args.script is None:
+        _emit_error("usage", "须提供查询脚本：路径、-（stdin）或 -c/--code CODE", exit_code=2)
 
     try:
+        jsonl_path = _resolve_session(args.session)
         s = Session(jsonl_path)
     except SessionError as e:
-        _emit_error(e.type, e.message, exit_code=1, **e.detail)
+        _emit_error(e.type, e.message, exit_code=e.exit_code, **e.detail)
 
-    script_src = Path(script_path).read_text(encoding="utf-8")
+    if args.code is not None:
+        script_src = args.code
+        file_label = "<inline>"
+    elif args.script == "-":
+        if sys.stdin.isatty():
+            print("[warn] stdin 是终端，等待输入（Ctrl-D 结束）", file=sys.stderr)
+        script_src = sys.stdin.read()
+        file_label = "<stdin>"
+    else:
+        script_path = args.script
+        if not Path(script_path).is_file():
+            _emit_error(
+                "file_not_found", f"查询脚本不存在: {script_path}", exit_code=2, path=script_path
+            )
+        script_src = Path(script_path).read_text(encoding="utf-8")
+        file_label = script_path
+
     namespace = {
         "__name__": "__main__",
-        "__file__": script_path,
+        "__file__": file_label,
         "s": s,
         "Session": Session,
         "encode": encode,
@@ -601,7 +677,7 @@ def main() -> None:
         "truncate": truncate,
     }
     try:
-        exec(compile(script_src, script_path, "exec"), namespace)
+        exec(compile(script_src, file_label, "exec"), namespace)
     except SystemExit:
         raise
     except Exception as e:
