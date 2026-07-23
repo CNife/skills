@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 把一个 Pi Agent 会话记录文件（JSONL）解析成 `Session` 对象，暴露五组查询原语，供查询脚本组合完成任意复杂会话分析。
 
+> **路径约定**：本文档所有相对路径均相对本 SKILL.md 所在目录（下称「技能目录」= 本文件 location 的 dirname）。脚本入口为 `<技能目录>/scripts/query.py`，勿按当前工作目录（CWD）解析。
+
 ## 定位
 
 与 [daily-recap](../../knowledge/daily-recap) 互补：
@@ -22,14 +24,15 @@ disable-model-invocation: true
 ## 调用形态
 
 ```bash
+# <技能目录> = 本 SKILL.md 所在目录（本文件 location 的 dirname）；scripts/query.py 相对它解析，勿按 CWD
 # session：jsonl 路径 或 session id（自动去 ~/.pi/agent/sessions glob）
 # script：路径、-（stdin）、-c/--code CODE（内联）
-uv run --script scripts/query.py <session> <查询脚本路径>
-uv run --script scripts/query.py <session> -
-uv run --script scripts/query.py <session> -c '<查询脚本源码>'
+uv run --script <技能目录>/scripts/query.py <session> <查询脚本路径>
+uv run --script <技能目录>/scripts/query.py <session> -
+uv run --script <技能目录>/scripts/query.py <session> -c '<查询脚本源码>'
 
 # session id 自省（agent 场景，省去手找文件路径）
-uv run --script scripts/query.py $PI_SUBAGENT_PARENT_SESSION -c 'print(s.title())'
+uv run --script <技能目录>/scripts/query.py $PI_SUBAGENT_PARENT_SESSION -c 'print(s.title())'
 ```
 
 session id 解析：参数非已存在文件、且不含路径分隔符/不以 `.jsonl` 结尾时视为 id，去 `~/.pi/agent/sessions/`（或环境变量 `PI_SESSIONS_DIR`）递归 glob `*_<id>.jsonl`。命中多个报 `ambiguous_session`。
@@ -152,7 +155,7 @@ print(encode(s.compaction_points()))
 
 ## 脚本位置
 
-`scripts/query.py` - PEP 723 单文件脚本，依赖 `toon-format>=0.9.0b1,<1.0`（PyPI beta）。原语库 + 运行器自包含于单文件，查询脚本通过 exec 注入的命名空间访问原语，无需 import 本地模块。
+`<技能目录>/scripts/query.py`（相对本 SKILL.md 所在目录） - PEP 723 单文件脚本，依赖 `toon-format>=0.9.0b1,<1.0`（PyPI beta）。原语库 + 运行器自包含于单文件，查询脚本通过 exec 注入的命名空间访问原语，无需 import 本地模块。
 
 ## 参考
 
