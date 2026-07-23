@@ -14,22 +14,24 @@ disable-model-invocation: true
 
 ### Step 0：确定目标工作日并检查数据来源
 
-**目标工作日**：以 CST 04:00 为分界，窗口 [工作日 04:00, 次日 04:00)。recap 时刻 ≥04:00 整理今天，<04:00（凌晨）整理昨天；可用 `--date YYYY-MM-DD` 整理指定工作日（跨天补整理）。
+**目标工作日**：工作日窗口以 CST 04:00 为界 [工作日 04:00, 次日 04:00)，凌晨 00:00-04:00 的会话归前一工作日。"总结哪个工作日"由 `extract_today.py` 按 recap 时刻自动选择（分界规则见脚本 `choose_target_workday`），AI 用脚本输出 JSON 的 `date` 字段；整理指定工作日才显式传 `--date YYYY-MM-DD`。
 
-两路并行检查：
-
-**本机**：
+**先确定目标工作日**（脚本自动选择）：
 
 ```bash
 cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 10
 # 跳过 stub 会话；仍含大量 title=null 会话则一次性提到 15，不反复重跑
 ```
 
-脚本按 04:00 窗口精确切分（粗筛 UTC 文件名前缀 + 读 session 行 timestamp 转 CST 判断），输出本机会话证据集。
+不带 `--date`，脚本自动选择目标工作日并在输出 JSON 顶层 `date` 字段返回。**读这个 `date` 作为目标工作日，后续远程粗筛、候选表标题、时间窗口核实全部复用它**。整理历史日期才显式传 `--date YYYY-MM-DD`。
+
+拿到 `date` 后立即回显：「整理目标工作日：{date}（脚本自动选择，改期用 `--date`）」，让日期错误第一轮就能被发现。用户纠正则带 `--date YYYY-MM-DD` 重跑脚本，用新 `date` 走后续流程。
+
+脚本输出同时是本机会话证据集（04:00 窗口精确切分：粗筛 UTC 文件名前缀 + 读 session 行 timestamp 转 CST 判断）。
 
 **远程**（nmem 是 source of truth）：
 
-用 `nmem_list_threads` 列举近期线程（`limit` 调大如 200，或分页跟随 `has_more`/`offset`），按返回的 `date`（导入日期，日级，英文格式如 "Jul 18, 2026"）粗筛目标工作日 ±2 天纳入候选--`date` 非会话时间，**不要用数字日期精确匹配**，按月份+日判断是否在范围内；精确切分推迟到 Step 4 远程条目核实（批准后定向 `nmem_read_thread`）。
+拿到 `date` 后用 `nmem_list_threads` 列举近期线程（`limit` 调大如 200，或分页跟随 `has_more`/`offset`），按返回的 `date`（日级导入日期，非会话时间，英文格式如 "Jul 18, 2026"）粗筛目标工作日 ±2 天纳入候选——按月份+日判断是否落在范围内；精确切分推迟到 Step 4 远程条目核实（批准后定向 `nmem_read_thread`）。
 
 **降级**：`nmem_list_threads` 抛 `backend_unreachable`/`timeout`（后端不可达，插件已内部重试）-> Hard stop，见 `references/recovery-guide.md`：询问用户是否仅看本机会话。
 
@@ -43,11 +45,11 @@ cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 10
 
 当前日报会话（本次整理本身）也在脚本输出中，无需此时排除--Step 2 分类时归入"当前日报"类，不纳入候选。
 
-**完成条件**：目标工作日证据集已确认非空（本机或远程至少一路有候选），或已告知用户"目标工作日没有会话记录"并终止。
+**完成条件**：目标工作日已回显，且证据集已确认非空（本机或远程至少一路有候选），或已告知用户"目标工作日没有会话记录"并终止。
 
 ### Step 1：收集并提取
 
-两路并行：
+两路会话分别处理：
 
 #### 1a. 本机会话 - 引用 Step 0 脚本输出
 
@@ -157,7 +159,7 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 cd <skill目录> && uv run --script scripts/obsidian-helper.py --vault <work|personal> [--date YYYY-MM-DD]
 ```
 
-输出三段：DIARY_PATH/DATE、RECENT（近期 2-3 篇日记摘要，了解写作风格）、TODAY（今日日记全文）。日记不存在时脚本自动从模板创建。整理历史工作日时传 `--date`（与 Step 0 一致），指向目标工作日的日记。
+输出三段：DIARY_PATH/DATE、RECENT（近期 2-3 篇日记摘要，了解写作风格）、TODAY（今日日记全文）。日记不存在时脚本自动从模板创建。写入时**始终**传 `--date`（用 Step 0 的目标工作日），指向目标工作日的日记。
 
 首次配置：脚本输出 `CONFIG_MISSING=true` 时，按打印的示例创建 `~/.config/cnife-skills/obsidian-diary.json`（含各 vault 的 base/diary_dir/template/exclude_meta），询问用户 vault 根目录后填入，重新运行脚本。
 

@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest>=8"]
 # ///
-"""extract_today.py 的测试 - 04:00 工作日窗口切分逻辑。
+"""extract_today.py 的测试 - 04:00 工作日窗口切分 + 12:00 总结分界逻辑。
 
 运行：cd <skill目录> && uv run --script scripts/test_extract_today.py
 """
@@ -63,22 +63,26 @@ def test_coarse_utc_prefixes_crosses_month_boundary():
     assert prefixes == ["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02"]
 
 
-def test_choose_target_workday_after_0400_is_today():
-    """recap 时刻 ≥04:00 整理今天。"""
-    now = datetime(2026, 7, 18, 10, 0, tzinfo=CST)
-    assert extract_today.choose_target_workday(now) == date(2026, 7, 18)
+@pytest.mark.parametrize(
+    "hour, minute, expected",
+    [
+        (0, 30, date(2026, 7, 17)),  # 凌晨 0-4 点：昨天（窗口仍在进行）
+        (2, 0, date(2026, 7, 17)),  # 凌晨 2:00：昨天
+        (4, 0, date(2026, 7, 17)),  # 04:00 窗口边界，仍 <12:00：昨天
+        (8, 35, date(2026, 7, 17)),  # 早上 08:35（曾出错场景）：昨天
+        (11, 59, date(2026, 7, 17)),  # 11:59 仍 <12:00：昨天
+        (12, 0, date(2026, 7, 18)),  # 12:00 边界（闭，≥12:00）：今天
+        (14, 0, date(2026, 7, 18)),  # 午后：今天
+        (22, 0, date(2026, 7, 18)),  # 晚间：今天
+    ],
+)
+def test_choose_target_workday(hour, minute, expected):
+    """以 12:00 为界：<12:00 整理昨天，≥12:00 整理今天。
 
-
-def test_choose_target_workday_before_0400_is_yesterday():
-    """recap 时刻 <04:00（凌晨）整理昨天。"""
-    now = datetime(2026, 7, 18, 2, 0, tzinfo=CST)
-    assert extract_today.choose_target_workday(now) == date(2026, 7, 17)
-
-
-def test_choose_target_workday_at_exact_0400_is_today():
-    """04:00 整为今天边界（闭）。"""
-    now = datetime(2026, 7, 18, 4, 0, tzinfo=CST)
-    assert extract_today.choose_target_workday(now) == date(2026, 7, 18)
+    04:00 是工作日窗口边界（workday_window），不是"总结哪个工作日"的分界点。
+    """
+    now = datetime(2026, 7, 18, hour, minute, tzinfo=CST)
+    assert extract_today.choose_target_workday(now) == expected
 
 
 def _make_pi_session(root, fname_ts, uuid, ts_iso, title, n_msgs=3):

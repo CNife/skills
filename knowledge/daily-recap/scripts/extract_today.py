@@ -5,9 +5,9 @@
 """
 extract_today.py - 提取目标工作日窗口内的 Pi/OMP 会话。
 
-工作日以 CST 04:00 为分界，窗口 [工作日 04:00, 次日 04:00)：凌晨 00:00-04:00
-的会话归前一工作日。默认目标工作日由 recap 时刻自动选择（≥04:00 今天 / <04:00
-昨天），可用位置参数或 --date 显式指定。
+工作日窗口以 CST 04:00 为界 [工作日 04:00, 次日 04:00)：凌晨 00:00-04:00
+的会话归前一工作日。"总结哪个工作日"以 12:00 为界（<12:00 昨天 / ≥12:00
+今天），默认由 recap 时刻自动选择，可用位置参数或 --date 显式指定。
 
 粗筛用 UTC 文件名日期前缀（窗口 ± 1 天），精确切读 session 行 timestamp 转 CST
 判断是否落在窗口内--文件名 UTC 前缀仅作粗筛，不作切分依据。
@@ -113,13 +113,15 @@ def coarse_utc_prefixes(target_workday: date) -> list[str]:
 
 
 def choose_target_workday(now: datetime) -> date:
-    """根据 recap 时刻选择目标工作日：≥04:00 整理今天，<04:00 整理昨天。
+    """根据 recap 时刻选择目标工作日：以 12:00 为界，<12:00 整理昨天，≥12:00 整理今天。
 
-    now 应为 CST 时区 aware；naive 视为 CST 本地时间。
+    04:00 是工作日窗口边界（见 workday_window），不是"总结哪个工作日"的分界点：
+    凌晨 0-4 点发起总结仍整理昨天（窗口尚未结束），午后才整理当天。now 应为
+    CST 时区 aware；naive 视为 CST 本地时间。
     """
     local = now.astimezone(CST) if now.tzinfo is not None else now
     workday = local.date()
-    if local.hour < 4:
+    if local.hour < 12:
         workday -= timedelta(days=1)
     return workday
 
