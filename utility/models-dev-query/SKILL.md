@@ -1,11 +1,7 @@
 ---
 name: models-dev-query
-description: >
-  Query AI model specs (pricing, context limits, capabilities, modalities) and
-  provider API endpoints from models.dev. Use when the user asks about model
-  pricing/specs, needs a provider's API/base-URL/env config, or wants to
-  list/filter/compare models across providers. 触发例：「gpt-5 的定价」
-  「查 XXX 支持哪些模型」「配置 Trae 用 deepseek」。
+description: 从 models.dev 查询 AI 模型规格（定价、上下文、能力、模态）与提供商 API 配置。
+disable-model-invocation: true
 ---
 
 # Models.dev Query
