@@ -16,8 +16,7 @@ knowledge/           个人知识系统
 └── daily-recap/       今日会话聚合成日报，写入 Obsidian 工作日志/日记
 
 utility/             通用工具（与代理无关）
-├── models-dev-query/    AI 模型规格查询
-└── search-router/       网络搜索路由器
+└── models-dev-query/    AI 模型规格查询
 
 .archive/            不再维护的历史技能
 ```
@@ -52,7 +51,6 @@ bunx skills add CNife/skills --full-depth
 | Skill | 描述 |
 |-------|------|
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
-| [search-router](./utility/search-router) | 基于 opencli 的智能搜索路由器，根据话题路由到最佳搜索源 |
 
 ## 开发
 

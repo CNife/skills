@@ -1,6 +1,8 @@
 ---
 name: search-router
 description: 搜索路由器：基于 opencli，按话题和场景把查询路由到合适的搜索源。当用户需要从网络获取信息时（无需用户提及 opencli）加载此技能。
+metadata:
+  internal: true
 ---
 
 # 搜索路由器
