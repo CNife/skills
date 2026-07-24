@@ -1,24 +1,38 @@
 [project]
-  name = "cnife-skills"
-  version = "0.1.0"
-  description = "CNife's Agent Skills - Python scripts"
-  readme = "README.md"
-  requires-python = ">=3.11"
-  dependencies = [
-    "pyyaml>=6.0",
-  ]
+name = "cnife-skills"
+version = "0.1.0"
+description = "CNife's Agent Skills - Python scripts"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6.0"]
+
+[dependency-groups]
+dev = ["pre-commit>=4.6.1"]
 
 [tool.ruff]
-  line-length = 100
-  target-version = "py311"
+line-length = 100
+target-version = "py311"
 
-  [tool.ruff.lint]
-    extend-select = ["I", "B", "UP", "C4", "PIE", "RUF", "W"]
-    # 允许中文全角标点（docstring、注释、help 文本中大量使用中文）
-    allowed-confusables = ["，", "。", "：", "；", "！", "？", "（", "）", "【", "】", "《", "》"]
+[tool.ruff.lint]
+extend-select = ["I", "B", "UP", "C4", "PIE", "RUF", "W"]
+# 允许中文全角标点（docstring、注释、help 文本中大量使用中文）
+allowed-confusables = [
+  "，",
+  "。",
+  "：",
+  "；",
+  "！",
+  "？",
+  "（",
+  "）",
+  "【",
+  "】",
+  "《",
+  "》",
+]
 
-    [tool.ruff.lint.isort]
-      split-on-trailing-comma = false
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
 
-  [tool.ruff.format]
-    skip-magic-trailing-comma = true
+[tool.ruff.format]
+skip-magic-trailing-comma = true
