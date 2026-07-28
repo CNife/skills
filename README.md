@@ -24,9 +24,12 @@ utility/             通用工具（与代理无关）
 
 ## 安装
 
+使用 skill-manager 声明式管理：
+
 ```bash
-# 从 GitHub 仓库安装
-bunx skills add CNife/skills --full-depth
+skill-manager --global source add CNife/skills       # 添加本仓库为源
+skill-manager --global enable CNife/skills <skill>   # 启用所需技能
+skill-manager --global sync                          # 同步到 ~/.agents/skills/
 ```
 
 ## 可用 Skills

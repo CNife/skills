@@ -8,12 +8,12 @@
 
 1. 用 `fd <name>` 定位源码。
 2. 修改并验证：脚本在技能目录运行 `uv run --script scripts/<file>.py`；执行 `uv run ruff check --fix <category>/<name>/`。
-3. 推送到 main 后，运行 `bunx skills update -g` 同步安装副本（GitHub 仓库为唯一源）。
+3. 推送到 main 后，运行 `skill-manager --global source update && skill-manager --global sync` 同步安装副本（GitHub 仓库为唯一源）。
 4. 完成前确认 `name:` 与目录名一致、`description:` 完整；目录结构变动时更新 README.md。
 
 ## 存档技能
 
-不再维护的技能移入 `.archive/<name>/`，并在 `SKILL.md` frontmatter 加 `metadata.internal: true`。重新安装存档技能需设 `INSTALL_INTERNAL_SKILLS=1`。
+不再维护的技能移入 `.archive/<name>/`，并在 `SKILL.md` frontmatter 加 `metadata.internal: true`。重新安装存档技能用 `skill-manager --global enable --all CNife/skills <name>`。
 
 ## 按需参考
 
