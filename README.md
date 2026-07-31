@@ -17,7 +17,8 @@ knowledge/           个人知识系统
 └── daily-recap/       今日会话聚合成日报，写入 Obsidian 工作日志/日记
 
 utility/             通用工具（与代理无关）
-└── models-dev-query/    AI 模型规格查询
+├── models-dev-query/    AI 模型规格查询
+└── plain-speak/         对话中冒出自造黑话时去掉、用平实的话重新解释
 
 .archive/            不再维护的历史技能
 ```
@@ -56,6 +57,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 | Skill | 描述 |
 |-------|------|
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
+| [plain-speak](./utility/plain-speak) | 对话中 AI 冒出自造黑话、用户跟不上时调用--把自造词去掉，用平实的话重新解释一遍 |
 
 ## 开发
 
