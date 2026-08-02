@@ -9,6 +9,30 @@
 
 ---
 
+## pi 共享机制：thinkingLevelMap 的 clamp
+
+所有 api 类型共用同一套 level 处理，发生在按 api 发参数**之前**：pi 先把用户选的 level clamp 到该模型支持的档位，再查 `thinkingLevelMap[clampedLevel]` 取端点值。源码在 `models.js`（不在各 `api/*.ts`）。
+
+### getSupportedThinkingLevels
+
+返回该模型可选的档位列表（pi 据此决定展示哪些档）：
+
+- `thinkingLevelMap[level] === null` -> **不支持**，过滤掉（不展示）。
+- `level` 是 `xhigh` / `max` -> 必须 `thinkingLevelMap[level] !== undefined`（显式定义）才算支持。
+- 其余档位（off/minimal/low/medium）-> `!== null` 即支持。
+
+### clampThinkingLevel
+
+把用户选的 level 映射到支持的档位：level 本身支持则原样返回；否则**先向上**找最近支持档（顺序 `off < minimal < low < medium < high < xhigh < max`），找不到再向下。
+
+例：模型只配了 `low`/`high`/`max`（off/minimal/medium/xhigh 为 `null`），用户选 `medium` -> clamp 到 `high`；选 `off` -> clamp 到 `low`。
+
+### 后果
+
+各 api 节的 `effort = thinkingLevelMap[level] ?? level` 描述的是 clamp **之后**的取值。clamp 已保证 level 是支持档（`thinkingLevelMap[level]` 非 `null`），故 `??` 取到的是你填的端点值，**不会透传原始 level 字符串**。`null` 档位只会被 clamp 走，不会发到端点。
+
+---
+
 ## openai-completions
 
 Chat Completions 兼容端点（`/v1/chat/completions`）。pi 最通用的 api。

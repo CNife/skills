@@ -1,7 +1,7 @@
 ---
 name: add-provider-models-to-pi
 disable-model-invocation: true
-description: 往 pi 的 models.json 新增/适配 provider 模型，含取参、思考三层合成、capture.ts 实测验证与固定。
+description: 往 pi 的 models.json 新增/适配 provider 模型。
 ---
 
 # Add Provider Models to Pi
@@ -21,12 +21,14 @@ description: 往 pi 的 models.json 新增/适配 provider 模型，含取参、
 ### 2. 源定位 —— 按对应 provider（托管端点）匹配
 
 1. 读目标 pi provider 的 `baseUrl` + `api`。
-2. 用 models-dev-query 技能查 models.dev，找 `api`/`baseUrl` 与之相同的 provider：命中则取参；未命中（如方舟）则回退抓该**对应 provider**的官方 API 文档（web）。
+2. 按 models-dev-query 的方法查 models.dev，找 `api`/`baseUrl` 与之相同的 provider：命中则取参；未命中（如方舟）则回退抓该**对应 provider**的官方 API 文档（web）。
 3. 注意：models.dev 的厂商端点（minimax.io）与托管端点（方舟）是不同 provider，模型名相同也不能混用参数。
+4. 确认目标模型在该**对应 provider**（精确到 baseUrl/套餐端点）已上线——同厂商不同套餐是不同 provider，模型可用性不同。例：方舟 `ark-coding-plan`（`/api/coding/v3`）与 `ark-agent-plan`（`/api/plan/v3`）模型列表不同，kimi-k3 仅在 agent-plan 上线。
 
-- **完成标准**：每个目标模型的参数源已确定（models.dev 命中 / 官方文档回退），并记下依据。
+- **完成标准**：每个目标模型的参数源已确定（models.dev 命中 / 官方文档回退）且已确认在该对应 provider 端点上线，并记下依据。
 
 ### 3. 适配 —— 翻译成 pi 的 model 条目
+
 按目标 provider 的 `api` 类型查 [`api-adapters.md`](api-adapters.md) 对应节，确认该 api 的 compat 字段集、思考参数机制、off 语义、maxTokens 字段名、缓存与 tool 格式（per-api 事实依据）。
 
 - `id`：用用户给的 id；与源确认是端点实际接受的模型名（方舟支持全小写，也接受控制台原名）。
@@ -34,7 +36,7 @@ description: 往 pi 的 models.json 新增/适配 provider 模型，含取参、
 - `reasoning`：来自源。
 - `thinkingLevelMap`：见第 4 步三层合成。
 - `input`：pi schema 仅接受 `text`/`image`；源的 `video` 等丢弃。
-- `contextWindow` / `maxTokens`：以**对应 provider**官方文档为准；与 models.dev 冲突时取官方文档（如方舟 M3 为 512k 而非目录 1M）。
+- `contextWindow` / `maxTokens`：以**对应 provider**官方文档为准；与 models.dev 冲突时取官方文档（如方舟 M3 为 512k 而非目录 1M）。文档无明确值时，参考其他 provider 上同一模型的参数（取模型官方厂商端点的默认值，如 kimi-k3 取 moonshotai 而非第三方网关），并标注“待 capture 验证”。
 - `cost`：源有按 token 计价填；订阅/套餐制（如 Coding Plan）省略（pi 默认 0）。
 - **完成标准**：每个模型已生成符合 pi schema 的 JSON 块，input 已去 video，context/maxTokens 取自对应 provider 官方文档。
 
@@ -42,10 +44,10 @@ description: 往 pi 的 models.json 新增/适配 provider 模型，含取参、
 
 1. **Layer1 Provider 机制**：端点怎么收思考参数--按 `api` 类型查 [`api-adapters.md`](api-adapters.md) 对应节的「思考参数机制」「off 语义」（pi 如何把 `thinkingLevelMap`/`compat` 翻译成实际请求参数）；源码指针亦在该文件。
 2. **Layer2 模型能力**：模型自身支持什么——来自源（`reasoning` 否？toggle？分级？常开？）。
-3. **Layer3 pi 处理**：pi 把统一 level（off/minimal/low/medium/high/xhigh/max）翻译成该 provider API 的规则（靠 `thinkingLevelMap`）：`null` 表示该档位**不支持**（pi 不展示、不可选），非 `null` 字符串表示**支持**且 pi 实际发送该端点值。`off` 行为因 `api` 而异（completions 多数 `thinkingFormat` 发显式关闭信号、responses 发 explicit effort、anthropic 不发参数）--具体见 [`api-adapters.md`](api-adapters.md) 的「off 语义」，**勿假设"off=不发"**。
+3. **Layer3 pi 处理**：pi 把统一 level 翻译成端点参数，两步——先 clamp（见 [`api-adapters.md`](api-adapters.md)「pi 共享机制」：不支持的档位向上挪到最近支持档，故 `null` 档位不会被透传给端点），再按 api 发 `thinkingLevelMap[level]`（`null`=不支持/不展示，非 `null`=支持且 pi 发该端点值）。`off` 行为因 `api` 而异（见对应节「off 语义」），**`off`≠不发**：off 非 `null` 时 pi 发显式关闭信号，`null` 时不发、落 provider 默认（always-reasoning 模型落模型默认 on，可关闭模型落 provider 默认）。
 
-- 合成：`off` 映射非 `null`（如 `"none"`）= 支持关闭（pi 可选 off 档，具体发送行为见 [`api-adapters.md`](api-adapters.md)）；`off->null` = 不支持关闭。其余档位按模型实际支持情况映射成端点接受的 effort/toggle 字符串，不支持者置 `null`。同 provider 已有模型仅作交叉校验，不盲抄。
-- **完成标准**：每个推理模型已列出全部 7 个档位 `off/minimal/low/medium/high/xhigh/max` 的映射值；`null`=不支持，非 `null` 字符串=支持且为端点接受值；Layer1 已查 [`api-adapters.md`](api-adapters.md) 对应节（不可凭记忆跳过），`off` 语义已确认（支持关闭->非 `null`，不支持关闭->`null`）。
+- 合成：`off` 映射非 `null`（如 `"none"`）= 支持关闭（pi 可选 off 档，具体发送行为见 [`api-adapters.md`](api-adapters.md)）；`off->null` = 不支持关闭。其余档位按模型实际支持情况映射成端点接受的 effort/toggle 字符串，不支持者置 `null`。同 provider 已有模型仅作交叉校验。
+- **完成标准**：每个推理模型已列出全部 7 个档位 `off/minimal/low/medium/high/xhigh/max` 的映射值；`null`=不支持，非 `null` 字符串=支持且为端点接受值；Layer1 已查 [`api-adapters.md`](api-adapters.md) 对应节（必须查，不可凭记忆），`off` 语义已确认（支持关闭->非 `null`，不支持关闭->`null`）。
 
 ### 5. Checkpoint
 
@@ -141,4 +143,3 @@ jq -c 'select(.role=="assistant") | {callIndex, cacheRead: .message.usage.cacheR
 5. **简报**：告知用户：已添加的模型列表、已通过的测试维度、capture.ts 保留位置（后续排查可复用）。
 
 - **完成标准**：models.json 有效、模型在 pi 中可见、日志已清理、用户已被告知结果。
-
