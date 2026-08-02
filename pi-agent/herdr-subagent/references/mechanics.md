@@ -64,7 +64,7 @@ wait 调用，进程内的记忆会在下一次丢失）才认作 settled。spaw
 
 ### cwd ≠ workdir
 
-- `herdr pane split --cwd "$PWD" --no-focus` 用**调用方 cwd**（你的仓库）--子代理操作你的仓库。
+- `herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label <子代理名> --no-focus` 开独立 tab（一代理一 tab），用**调用方 cwd**（你的仓库）--子代理操作你的仓库。`--workspace` 必须显式传：缺省时 herdr 落到默认 workspace，不是调用方的。
 - workdir（mktemp 临时目录）只放 `task.md`/`role.md`/会话 jsonl，靠 `--session-dir <workdir>` 隔离会话。
 - 交付协议提示词给 task.md 的**绝对路径**（`workdir/task.md`），子代理跨 cwd 也能读到。
 
@@ -74,7 +74,7 @@ herdr 拒绝多行 inline 参数（`invalid_agent_argument`），故 `--append-s
 
 ### shell 落定竞态
 
-`pane split` 后新 pane 的 shell 需落定到交互提示符再 `agent start`，否则竞态 "not available shell"。脚本重试 `agent start`（匹配错误信息含 "shell"，~6 次 × 0.7s），非 shell 错误立即抛出。
+`tab create` 后新 tab root pane 的 shell 需落定到交互提示符再 `agent start`，否则竞态 "not available shell"。脚本重试 `agent start`（匹配错误信息含 "shell"，~6 次 × 0.7s），非 shell 错误立即抛出。
 
 ### 对话式回传（结果走回复，不走文件）
 
@@ -85,7 +85,7 @@ herdr 拒绝多行 inline 参数（`invalid_agent_argument`），故 `--append-s
 
 ### 注册表
 
-`~/.cache/herdr-subagent/registry.json`（env `HERDR_SUBAGENT_REGISTRY` 覆盖），映射 `name -> {pane_id, workdir, md_path, worked?}`。spawn 写入，close 注销。**运行时以 herdr 活态为准**（`agent get`），注册表仅作清理回退（手动关 pane 后注册表会 stale）。`worked`（可选）是 working 痕迹：首次见 `agent_status=working` 时置位，供 wait 的 settled 判定（防待命 idle 误判），close 随 entry 删除。`result` 优先从 `agent get` 的 `agent_session.value` 取 jsonl 路径，**value 无效（文件不存在）时回退**注册表 workdir 的 `*.jsonl` glob（jsonl 尚未创建/路径陈旧时兜底）。
+`~/.cache/herdr-subagent/registry.json`（env `HERDR_SUBAGENT_REGISTRY` 覆盖），映射 `name -> {tab_id, pane_id, workdir, md_path, worked?}`。spawn 写入，close 注销。**运行时以 herdr 活态为准**（`agent get`），注册表仅作清理回退（手动关 tab 后注册表会 stale）。close 优先 `tab close <tab_id>`（整 tab 连带回收）；旧 entry 无 `tab_id` 时回退 `pane close <pane_id>`。`worked`（可选）是 working 痕迹：首次见 `agent_status=working` 时置位，供 wait 的 settled 判定（防待命 idle 误判），close 随 entry 删除。`result` 优先从 `agent get` 的 `agent_session.value` 取 jsonl 路径，**value 无效（文件不存在）时回退**注册表 workdir 的 `*.jsonl` glob（jsonl 尚未创建/路径陈旧时兜底）。
 
 ### 跨技能脚本定位
 
@@ -93,4 +93,4 @@ herdr 拒绝多行 inline 参数（`invalid_agent_argument`），故 `--append-s
 
 ### 透明性
 
-每个原语输出最小 schema JSON（`{name, pane, workdir, jsonl}`/`{sent}`/`{name, state}`/`{text}`/`{ok}`）；错误输出 `{"error":true,"type":...}`（exit 2 用法/文件，exit 1 运行时）。出问题时看输出 + `herdr agent get/read` + workdir 里的 jsonl。
+每个原语输出最小 schema JSON（`{name, tab, pane, workdir, jsonl}`/`{sent}`/`{name, state}`/`{text}`/`{ok}`）；错误输出 `{"error":true,"type":...}`（exit 2 用法/文件，exit 1 运行时）。出问题时看输出 + `herdr agent get/read` + workdir 里的 jsonl。

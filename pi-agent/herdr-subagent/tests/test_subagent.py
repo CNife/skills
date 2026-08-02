@@ -329,6 +329,7 @@ def test_e2e_explorer_round_trip(tmp_path):
         assert spawn.returncode == 0, spawn.stderr
         sp = json.loads(spawn.stdout)
         assert sp["name"] == name
+        assert sp["tab"]
         assert sp["pane"]
         assert sp["workdir"]
 

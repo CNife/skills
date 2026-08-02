@@ -10,7 +10,7 @@
 五个原语由主代理组合（异步默认）：
 
     spawn <.md> [--name N]   读 .md 翻译成 pi 启动参数、mktemp 建临时目录、
-                             herdr pane split + agent start --kind pi。
+                             herdr tab create（一代理一 tab）+ agent start --kind pi。
                              输出 {name, pane, workdir, jsonl}。
     task <name> <任务>        任务写进 workdir/task.md + 发固定交付协议提示词，非阻塞。
                              输出 {sent}。
@@ -20,7 +20,7 @@
                              输出 {name, state}。
     result <name>            从该子代理的会话 JSONL 抽最终 assistant 全文。
                              空结果回退 herdr agent read transcript。输出 {text}。
-    close <name>             herdr pane close + 删临时目录 + 注销；幂等。输出 {ok}。
+    close <name>             herdr tab close + 删临时目录 + 注销；幂等。输出 {ok}。
 
 调用形态（<技能目录> = 本文件 location 的 dirname 的父目录）::
 
@@ -258,11 +258,14 @@ def _unique_name(base: str) -> str:
         i += 1
 
 
-def _extract_pane_id(split_obj: dict | None) -> str | None:
-    if not split_obj:
-        return None
-    pane = (split_obj.get("result") or {}).get("pane") or {}
-    return pane.get("pane_id")
+def _extract_tab_create(tab_obj: dict | None) -> tuple[str | None, str | None]:
+    """tab create 响应 -> (tab_id, root_pane_id)。"""
+    if not tab_obj:
+        return None, None
+    result = tab_obj.get("result") or {}
+    tab_id = (result.get("tab") or {}).get("tab_id")
+    pane_id = (result.get("root_pane") or {}).get("pane_id")
+    return tab_id, pane_id
 
 
 def _agent_start(name: str, pane_id: str, pi_args: list[str]) -> None:
@@ -297,7 +300,7 @@ def _agent_start(name: str, pane_id: str, pi_args: list[str]) -> None:
     raise last
 
 
-# ── 注册表（name -> pane_id/workdir/md_path，清理用，运行时以 herdr 活态为准）──
+# ── 注册表（name -> tab_id/pane_id/workdir/md_path，清理用，运行时以 herdr 活态为准）──
 
 
 def _registry_path() -> Path:
@@ -405,33 +408,37 @@ def cmd_spawn(md_path: str, name: str | None = None) -> dict:
     role_file.write_text(body, encoding="utf-8")
     pi_args = [*build_pi_args(fm, role_file), "--session-dir", str(workdir)]
 
-    split = _run_herdr(
-        ["pane", "split", "--current", "--direction", "right", "--cwd", os.getcwd(), "--no-focus"]
-    )
-    pane_id = _extract_pane_id(split)
+    # 一代理一 tab：显式 --workspace 指向调用方 workspace（缺省时 herdr 落到默认
+    # workspace，不是调用方的）；--no-focus 不抢焦点；label 用子代理名便于人看。
+    create_args = ["tab", "create", "--cwd", os.getcwd(), "--label", uname, "--no-focus"]
+    ws = os.environ.get("HERDR_WORKSPACE_ID")
+    if ws:
+        create_args += ["--workspace", ws]
+    created = _run_herdr(create_args)
+    tab_id, pane_id = _extract_tab_create(created)
     if not pane_id:
         shutil.rmtree(workdir, ignore_errors=True)
-        _die("spawn_failed", f"pane split 未返回 pane_id: {split!r}")
+        _die("spawn_failed", f"tab create 未返回 root pane_id: {created!r}")
 
     try:
         _agent_start(uname, pane_id, pi_args)
     except HerdrError as e:
         shutil.rmtree(workdir, ignore_errors=True)
         try:
-            _run_herdr(["pane", "close", pane_id])
+            _run_herdr(["tab", "close", tab_id] if tab_id else ["pane", "close", pane_id])
         except HerdrError:
             pass
         _die("spawn_failed", f"agent start 失败: {e.message}", code=e.code)
 
     reg = _registry_load()
-    reg[uname] = {"pane_id": pane_id, "workdir": str(workdir), "md_path": str(p)}
+    reg[uname] = {"tab_id": tab_id, "pane_id": pane_id, "workdir": str(workdir), "md_path": str(p)}
     _registry_save(reg)
 
     jsonl: str | None = None
     agent = _agent_get_or_none(uname)
     if agent is not None:
         jsonl = (agent.get("agent_session") or {}).get("value")
-    return {"name": uname, "pane": pane_id, "workdir": str(workdir), "jsonl": jsonl}
+    return {"name": uname, "tab": tab_id, "pane": pane_id, "workdir": str(workdir), "jsonl": jsonl}
 
 
 def cmd_task(name: str, task_text: str) -> dict:
@@ -539,6 +546,7 @@ def cmd_close(name: str) -> dict:
     reg = _registry_load()
     entry = reg.get(name)
 
+    tab_id: str | None = entry.get("tab_id") if entry else None
     pane_id: str | None = None
     agent = _agent_get_or_none(name)
     if agent is not None:
@@ -547,7 +555,13 @@ def cmd_close(name: str) -> dict:
         pane_id = pane_id or entry.get("pane_id")
     workdir = entry.get("workdir") if entry else None
 
-    if pane_id:
+    # 优先整 tab 回收（连带 tab 内 pane 与进程）；无 tab_id 的旧注册回退 pane close。
+    if tab_id:
+        try:
+            _run_herdr(["tab", "close", tab_id])
+        except HerdrError:
+            pass  # 已不在，幂等
+    elif pane_id:
         try:
             _run_herdr(["pane", "close", pane_id])
         except HerdrError:

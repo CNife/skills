@@ -5,7 +5,7 @@ description: 用 herdr 驱动 pi 子代理的薄运行时。运行在 Herdr 内�
 
 # Herdr Subagent - herdr 驱动的薄子代理运行时
 
-把 herdr 的 agent 协调原语 + pi 的启动参数复用一个**薄子代理运行时**，不造框架。每个子代理是一个真实 pi 跑在 herdr pane 里--在 TUI 里可见、可聚焦、可 `send-keys` 介入。任务走隔离临时目录交接，结果走对话回传（子代理最终回复即结果）。
+把 herdr 的 agent 协调原语 + pi 的启动参数复用一个**薄子代理运行时**，不造框架。每个子代理是一个真实 pi 跑在**独立 herdr tab** 里（一代理一 tab）--在 TUI 里可见、可聚焦、可 `send-keys` 介入。任务走隔离临时目录交接，结果走对话回传（子代理最终回复即结果）。
 
 **前置**：运行在 Herdr 内（`test "${HERDR_ENV:-}" = 1`），`herdr` 与 `pi` 在 PATH。跨依赖 [herdr](../../.agents/skills/herdr)（pane/agent 协调）与本仓库 [pi-session-query](../pi-session-query)（结果抽取）。脚本入口 `<技能目录>/scripts/subagent.py`，路径相对本 SKILL.md 所在目录解析，勿按 CWD。
 
@@ -52,12 +52,12 @@ description: 用 herdr 驱动 pi 子代理的薄运行时。运行在 Herdr 内�
 uv run --script <技能目录>/scripts/subagent.py spawn <agent.md> [--name N]
 ```
 
-读 .md 翻译成 pi 启动参数、mktemp 建临时目录（workdir）、写角色文件、`herdr pane split`（`--no-focus`，cwd 用调用方仓库目录）、等 shell 落定、`herdr agent start --kind pi`（`--session-dir` 指向 workdir）。输出 `{name, pane, workdir, jsonl}`。
+读 .md 翻译成 pi 启动参数、mktemp 建临时目录（workdir）、写角色文件、`herdr tab create`（`--no-focus`、`--workspace` 用调用方的 `$HERDR_WORKSPACE_ID`、label 用子代理名、cwd 用调用方仓库目录）、等 shell 落定、`herdr agent start --kind pi`（`--session-dir` 指向 workdir）。输出 `{name, tab, pane, workdir, jsonl}`。
 
 - `--name` 省略时从 .md 文件名派生（小写、非法字符替 `-`），重名自动追加 `-2`/`-3`。给 `--name` 则直接用（须合法且未被占用）。
 - workdir 只放 `task.md`/`role.md`/会话 jsonl；子代理的 cwd 是**调用方仓库目录**（操作仓库），不是 workdir。
 
-**完成条件**：输出含 `name`/`pane`/`workdir`；`herdr agent get <name>` 能查到且 `agent_status` 非 `unknown`。
+**完成条件**：输出含 `name`/`tab`/`pane`/`workdir`；`herdr agent get <name>` 能查到且 `agent_status` 非 `unknown`。
 
 ### Step 2：task - 下发任务（非阻塞）
 
@@ -118,9 +118,9 @@ uv run --script <技能目录>/scripts/subagent.py result <name>
 uv run --script <技能目录>/scripts/subagent.py close <name>
 ```
 
-`herdr pane close` + 删 workdir + 注销注册。不论子代理状态都回收；重复执行不报错。输出 `{ok: true}`。
+`herdr tab close`（连带回收 tab 内 pane 与进程；旧注册无 tab_id 时回退 `pane close`）+ 删 workdir + 注销注册。不论子代理状态都回收；重复执行不报错。输出 `{ok: true}`。
 
-**完成条件**：`{ok: true}`；pane 已关、workdir 已删、注册已注销。重复 close 仍 `{ok: true}`。
+**完成条件**：`{ok: true}`；tab 已关、workdir 已删、注册已注销。重复 close 仍 `{ok: true}`。
 
 ## worker / bash 安全告诫
 
