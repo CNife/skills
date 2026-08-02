@@ -31,6 +31,11 @@ allowed-confusables = [
   "》",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# main() 兜底 except Exception 是有意 catch-all（一切异常转结构化错误）；
+# 0.15.11 不报 BLE001（noqa 会被判 unused 删掉）、0.16.1 报，用 per-file-ignores 统一。
+"pi-agent/herdr-subagent/scripts/subagent.py" = ["BLE001"]
+
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false
 

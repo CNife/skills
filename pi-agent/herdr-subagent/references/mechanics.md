@@ -42,11 +42,23 @@ herdr 的 agent 状态（`agent get` 的 `agent_status`）+ 脚本派生态：
       close
 
    done = 未被见过的后台完成（同 idle 底层态）
-   agent 退出（agent_not_found）→ wait 报 done
-   超时仍 working/unknown → wait 报 stalled
+   agent 退出（agent_not_found 且注册表有记录）→ wait 报 done
+   未 spawn/已 close（注册表无记录）→ 死名字，wait 跳过；全部跳过 → exhausted
+   idle/done 认作 settled 须曾 working（注册表 entry['worked'] 持久化）
+   超时仍 working/unknown，或 idle 从未 working → wait 报 stalled
 ```
 
-`wait` 返回 `idle`/`done`/`blocked` 任一 settled 态都有效；`blocked` 时子代理在提问（转交人或 `send-keys` 介入）；`stalled` 时无生命周期变化（`herdr agent read` 瞄一眼）。`close` 不论状态都回收。
+`wait` 返回 `idle`/`done`/`blocked` 任一 settled 态都有效；`blocked` 时子代理在提问（转交人或 `send-keys` 介入）；`stalled` 时无生命周期变化（`herdr agent read` 瞄一眼）；`exhausted` 时没有可等候选（`name` 为空，循环终止信号）。`close` 不论状态都回收。
+
+**settled 让位靠 close，不是 result**：wait 对已 settled 的名字没有消费标记，
+result 后它仍会命中 wait——必须 result + close 成对处理、并把该名字移出下次 wait 的列表，
+否则并行循环会卡在同一个名字上。死名字（未 spawn/已 close）不返回 done，直接跳过。
+
+**working 门槛（防待命误判）**：task 下发前 spawn 出的子代理就是 idle（空闲待命），
+与完成后的 idle 无法从 agent_status 区分；且待命时 `--session-dir` 的 jsonl 尚未创建，
+此时 result 只会 fallback 到带启动横幅的 transcript。故 idle/done 须曾见 `working`
+（首次 working 时写注册表 `entry['worked']`，跨 wait 调用持久化——并行接手是多次独立
+wait 调用，进程内的记忆会在下一次丢失）才认作 settled。spawn 不设，close 删 entry 即消失。
 
 ## 关键机制
 
@@ -68,12 +80,12 @@ herdr 拒绝多行 inline 参数（`invalid_agent_argument`），故 `--append-s
 
 子代理最终回复即结果，主代理从会话 jsonl 抽主路径最后 assistant 全文。理由：只读子代理（无 `write`）写不了结果文件；对话式回传让它保持真·只读（原型验证：只读 + 文件交付冲突--只读子代理死循环试图读它写不了的结果文件）。
 
-- 抽取用 pi-session-query 的**公开 API**（`s.entries` + `s.leaf()`，手动回溯 `parentId` 取最后 assistant 的 text block），**绕过** `s.messages()`/`s.blocks()` 的默认 200 字截断取全文。
+- 抽取用 pi-session-query 的**公开 API**（`s.entries` + `s.leaf()`），手动回溯 `parentId` 链，**从 leaf 端找第一条 assistant**（= 主路径上最后一条 assistant = 最终回复）的 text block，**绕过** `s.messages()`/`s.blocks()` 的默认 200 字截断取全文。不能反过来从 root 端取第一条：那会命中会话最早的 assistant（常为 thinking+toolCall 中间步骤，无 text block），空抽取触发 transcript 回退、带回启动横幅噪声。
 - 空结果回退 `herdr agent read <name> --source recent-unwrapped` transcript，绝不丢失输出。
 
 ### 注册表
 
-`~/.cache/herdr-subagent/registry.json`（env `HERDR_SUBAGENT_REGISTRY` 覆盖），映射 `name -> {pane_id, workdir, md_path}`。spawn 写入，close 注销。**运行时以 herdr 活态为准**（`agent get`），注册表仅作清理回退（手动关 pane 后注册表会 stale）。`result` 优先从 `agent get` 的 `agent_session.value` 取 jsonl 路径，取不到再回退注册表 workdir 的 `*.jsonl` glob。
+`~/.cache/herdr-subagent/registry.json`（env `HERDR_SUBAGENT_REGISTRY` 覆盖），映射 `name -> {pane_id, workdir, md_path, worked?}`。spawn 写入，close 注销。**运行时以 herdr 活态为准**（`agent get`），注册表仅作清理回退（手动关 pane 后注册表会 stale）。`worked`（可选）是 working 痕迹：首次见 `agent_status=working` 时置位，供 wait 的 settled 判定（防待命 idle 误判），close 随 entry 删除。`result` 优先从 `agent get` 的 `agent_session.value` 取 jsonl 路径，**value 无效（文件不存在）时回退**注册表 workdir 的 `*.jsonl` glob（jsonl 尚未创建/路径陈旧时兜底）。
 
 ### 跨技能脚本定位
 
