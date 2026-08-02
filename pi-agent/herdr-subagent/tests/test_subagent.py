@@ -5,7 +5,7 @@
 # ///
 """subagent.py 的测试 - 翻译器（主 seam）+ 端到端冒烟（辅 seam）。
 
-运行：cd <skill目录> && uv run --script scripts/test_subagent.py
+运行：cd <skill目录> && uv run --script tests/test_subagent.py
 
 测试哲学（沿用 pi-session-query test_query.py 先例）：只测外部行为，期望值来自
 原型验证的 frontmatter->参数契约 + 构造场景，独立于实现。
@@ -20,16 +20,21 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# 测试在 tests/，脚本目录不在 sys.path；显式加入以便 import 被测模块。
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
 import json
 import os
 import subprocess
-from pathlib import Path
 
 import pytest
 import subagent
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SUBAGENT_PY = SCRIPT_DIR / "subagent.py"
+SUBAGENT_PY = SCRIPT_DIR.parent / "scripts" / "subagent.py"
 
 
 # ── 三个真实 agent .md 的 frontmatter 契约（照 ~/.pi/agent/agents/ 原件复制）────────

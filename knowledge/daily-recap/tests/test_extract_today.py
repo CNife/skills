@@ -5,8 +5,14 @@
 # ///
 """extract_today.py 的测试 - 04:00 工作日窗口切分 + 12:00 总结分界逻辑。
 
-运行：cd <skill目录> && uv run --script scripts/test_extract_today.py
+运行：cd <skill目录> && uv run --script tests/test_extract_today.py
 """
+
+import sys
+from pathlib import Path
+
+# 测试在 tests/，脚本目录不在 sys.path；显式加入以便 import 被测模块。
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import json
 from datetime import date, datetime

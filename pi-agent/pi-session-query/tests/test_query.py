@@ -5,7 +5,7 @@
 # ///
 """query.py 的测试 - 原语层（主 seam）+ 运行器端到端（辅 seam）。
 
-运行：cd <skill目录> && uv run --script scripts/test_query.py
+运行：cd <skill目录> && uv run --script tests/test_query.py
 
 测试哲学：只测外部行为（原语公开接口 + 运行器外部行为），期望值来自 Pi
 会话格式文档与构造场景，独立于实现。
@@ -13,16 +13,21 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# 测试在 tests/，脚本目录不在 sys.path；显式加入以便 import 被测模块。
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
 import json
 import os
 import subprocess
-from pathlib import Path
 
 import pytest
 import query
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-QUERY_PY = SCRIPT_DIR / "query.py"
+QUERY_PY = SCRIPT_DIR.parent / "scripts" / "query.py"
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -619,6 +624,7 @@ def _run_runner(
         timeout=120,
         input=stdin,
         env=run_env,
+        check=False,
     )
 
 
