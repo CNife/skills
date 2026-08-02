@@ -5,14 +5,6 @@
 ## 目录结构
 
 ```text
-pi-agent/            Pi Agent 生态专用技能
-├── pi-trending/                Pi 生态热门包发现
-├── search-pi-extensions/       按需求检索 pi 扩展/包
-├── add-provider-models-to-pi/  从 provider 拉模型适配进 pi
-├── pi-session-query/           Pi 会话树形查询原语库
-├── fabric-best-practices/      fabric_exec 判断力/避坑手册
-└── herdr-subagent/             用 herdr 驱动 pi 子代理的薄运行时
-
 knowledge/           个人知识系统
 ├── nmem-maintenance/  Nowledge Mem 知识库巡检与事件处理
 └── daily-recap/       今日会话聚合成日报，写入 Obsidian 工作日志/日记
@@ -36,16 +28,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 
 ## 可用 Skills
 
-### pi-agent/
-
-| Skill | 描述 |
-|-------|------|
-| [pi-trending](./pi-agent/pi-trending) | Pi 生态热门包发现 - 从 npm registry 计算趋势分 |
-| [search-pi-extensions](./pi-agent/search-pi-extensions) | 按需求检索 pi 扩展/包 - npm 关键词检索 + GitHub 信号质量评估 |
-| [add-provider-models-to-pi](./pi-agent/add-provider-models-to-pi) | 从源 provider（models.dev/官方文档）拉取参数并适配进 pi 的 models.json |
-| [pi-session-query](./pi-agent/pi-session-query) | Pi 会话树形查询原语库 - 还原主路径/分支/压缩/工具配对，供 AI 写查询脚本做复杂分析 |
-| [fabric-best-practices](./pi-agent/fabric-best-practices) | fabric_exec 判断力/避坑手册 - 何时用哪个机制 + 常见陷阱 + 纠错口诀；fabric-exec 与 fabric-guide 之间的判断力层 |
-| [herdr-subagent](./pi-agent/herdr-subagent) | 用 herdr 驱动 pi 子代理的薄运行时 - agent .md 翻译成 pi 启动参数，每个子代理是真实 pi 跑在 herdr pane 里（可见/可介入），暴露 spawn/task/wait/result/close 五原语 |
+> pi-agent 分类的 6 个技能已于 2026-08-02 迁入 [CNife/pi-extensions](https://github.com/CNife/pi-extensions) 的 `personal/skills/`，随 pi git 包分发；本仓库不再维护。
 
 ### knowledge/
 
