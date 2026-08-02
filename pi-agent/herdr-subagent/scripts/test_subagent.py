@@ -343,6 +343,7 @@ def test_e2e_explorer_round_trip(tmp_path):
         text = json.loads(result.stdout)["text"]
         assert text and text.strip(), "结果不应为空"
         assert "CNife" in text  # README 第一行
+        assert "Model scope" not in text  # 干净：无 pi 启动横幅（抽取 bug 回归保护）
     finally:
         _run_cli("close", name)  # 幂等清理
 
@@ -363,6 +364,53 @@ def test_e2e_close_is_idempotent(tmp_path):
         assert json.loads(c2.stdout)["ok"] is True
     finally:
         _run_cli("close", name)
+
+
+@pytest.mark.skipif(not _e2e_enabled(), reason="需 HERDR_ENV=1 且 HERDR_SUBAGENT_E2E=1")
+def test_e2e_parallel_two_explorers(tmp_path):
+    """并行 E2E：两个 explorer 同时跑，轮流 wait/result/close 直到 exhausted。
+
+    覆盖 wait 的并行接手语义：settled 后必须 result+close 成对才让位，
+    全部处理完 wait 返回 exhausted；同时验证已 close 的死名字不挡路。
+    """
+    md = _write(tmp_path, "explorer.md", _EXPLORER_MD)
+    repo_root = SCRIPT_DIR.parent.parent.parent
+    readme = repo_root / "README.md"
+    assert readme.is_file(), "E2E 需要仓库 README.md 存在"
+
+    names = ["e2e-par-a", "e2e-par-b"]
+    try:
+        for n in names:
+            sp = json.loads(_run_cli("spawn", str(md), "--name", n).stdout)
+            assert sp["name"] == n
+
+        for n in names:
+            task_text = f"读取 {readme} 的第一行，把该行原文作为最终回复。不要写任何文件。"
+            t = _run_cli("task", n, task_text)
+            assert json.loads(t.stdout)["sent"] is True
+
+        # 逐个接手：wait → result → close，直到 exhausted
+        got: dict[str, str] = {}
+        for _ in range(4):  # 2 轮接手 + 尾部 exhausted，留 1 轮余量
+            w = json.loads(_run_cli("wait", *names, "--timeout", "120000").stdout)
+            if w["state"] == "exhausted":
+                break
+            assert w["name"] in names, f"不应返回死名字: {w}"
+            r = json.loads(_run_cli("result", w["name"]).stdout)
+            got[w["name"]] = r["text"]
+            c = _run_cli("close", w["name"])
+            assert json.loads(c.stdout)["ok"] is True
+        else:
+            raise AssertionError("未等到 exhausted，wait 可能卡在已处理的名字上")
+
+        assert set(got) == set(names), f"两个结果都应取到: {got}"
+        for text in got.values():
+            assert text and text.strip(), "结果不应为空"
+            assert "CNife" in text
+            assert "Model scope" not in text  # 干净：无启动横幅
+    finally:
+        for n in names:
+            _run_cli("close", n)
 
 
 if __name__ == "__main__":

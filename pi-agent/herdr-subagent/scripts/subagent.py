@@ -15,7 +15,9 @@
     task <name> <任务>        任务写进 workdir/task.md + 发固定交付协议提示词，非阻塞。
                              输出 {sent}。
     wait <name>... [--timeout MS]   轮询命名的子代理，谁先 settled 返回谁
-                             （idle/done/blocked/stalled）。输出 {name, state}。
+                             （idle/done/blocked/stalled）；死名字（未 spawn/
+                             已 close）自动跳过；全部无可等返回 exhausted。
+                             输出 {name, state}。
     result <name>            从该子代理的会话 JSONL 抽最终 assistant 全文。
                              空结果回退 herdr agent read transcript。输出 {text}。
     close <name>             herdr pane close + 删临时目录 + 注销；幂等。输出 {ok}。
@@ -338,7 +340,8 @@ def _query_py() -> Path | None:
     return None
 
 
-# 只用 s.entries + s.leaf()（公开 API），手动回溯 parentId 取最后 assistant 的未截断 text。
+# 只用 s.entries + s.leaf()（公开 API），手动回溯 parentId 取主路径上最后一条
+# assistant 的未截断 text（= 子代理最终回复）。
 _EXTRACT_SCRIPT = """\
 import sys
 by_id = {e.get('id'): e for e in s.entries if e.get('id')}
@@ -349,7 +352,10 @@ while cur is not None:
     chain.append(cur)
     pid = cur.get('parentId')
     cur = by_id.get(pid) if pid else None
-for e in reversed(chain):
+# chain 为 leaf→root；从 leaf 端找第一条 assistant（最终回复）。
+# 不能 reversed 后取第一条：那会是会话最早的 assistant（常为 thinking+toolCall
+# 中间步骤，无 text block），导致空抽取、触发 transcript 回退（带启动横幅噪声）。
+for e in chain:
     if e.get('type') == 'message':
         m = e.get('message') or {}
         if m.get('role') == 'assistant':
@@ -390,6 +396,8 @@ def cmd_spawn(md_path: str, name: str | None = None) -> dict:
     base = (name or derive_name(p)).strip().lower()
     if not _is_valid_name(base):
         _die("usage", f"非法 agent 名 {base!r}（须匹配 [a-z][a-z0-9_-]{{0,31}}）", exit_code=2)
+    if name is not None and _name_taken(base):
+        _die("name_taken", f"agent 名已被占用: {base}", exit_code=2, name=base)
     uname = _unique_name(base) if name is None else base
 
     workdir = Path(tempfile.mkdtemp(prefix=f"herdr-subagent-{uname}-"))
@@ -447,23 +455,58 @@ def cmd_task(name: str, task_text: str) -> dict:
 
 
 def cmd_wait(names: list[str], timeout_ms: int = 120000) -> dict:
+    """轮询命名的子代理，谁先 settled 返回谁（idle/done/blocked）。
+
+    - 死名字（未 spawn 或已 close，注册表无记录）跳过，不伪装 done——
+      避免主代理去取一个不存在的结果。
+    - spawn 过但 agent 已退出（注册表有记录）返回 done，主代理取结果后 close。
+    - 全部候选都被跳过（无可等）时返回 {name: "", state: "exhausted"}，
+      即并行循环的终止信号。
+
+    settled 判定带 working 门槛：idle/done 须**曾经 working**才返回，
+    防止把 task 前的空闲待命（idle）误判为完成——那时 jsonl 尚未创建，
+    result 只能 fallback transcript。blocked 不受此限（须立即介入）。
+
+    working 痕迹持久化到注册表 entry['worked']（非进程内）：并行接手是多次独立
+    wait 调用（每次新进程），进程内的 saw_working 会在下一次 wait 丢失，导致已
+    完成的子代理永远等不到。spawn 不设、close 删 entry 时消失。
+    """
     deadline = time.monotonic() + timeout_ms / 1000.0
     poll = 1.0
     while True:
-        states: dict[str, str] = {}
+        reg = _registry_load()
+        worked = {nm for nm, e in reg.items() if e.get("worked")}
+        cand: list[tuple[str, str]] = []
+        changed = False
         for nm in names:
+            entry = reg.get(nm)
             agent = _agent_get_or_none(nm)
             if agent is None:
-                return {"name": nm, "state": "done"}  # 已退出
-            states[nm] = agent.get("agent_status", "unknown")
-        for nm in names:
-            if states[nm] in ("idle", "done", "blocked"):
-                return {"name": nm, "state": states[nm]}
+                if entry is not None:
+                    cand.append((nm, "done"))  # spawn 过但 agent 已退出
+                continue  # 死名字：未 spawn 或已 close，跳过
+            st = agent.get("agent_status", "unknown")
+            if st == "working" and entry is not None and not entry.get("worked"):
+                entry["worked"] = True
+                changed = True
+            cand.append((nm, st))
+        if changed:
+            _registry_save(reg)
+            worked = {nm for nm, e in reg.items() if e.get("worked")}
+        for nm, st in cand:
+            if st == "blocked":
+                return {"name": nm, "state": "blocked"}
+            if st in ("idle", "done") and nm in worked:
+                return {"name": nm, "state": st}
+        if not cand:
+            return {"name": "", "state": "exhausted"}  # 没有可等的了
         if time.monotonic() >= deadline:
-            for nm in names:
-                if states.get(nm) in ("working", "unknown"):
+            for nm, st in cand:
+                if st in ("working", "unknown"):
                     return {"name": nm, "state": "stalled"}
-            return {"name": names[0], "state": "stalled"}
+                if st == "idle" and nm not in worked:
+                    return {"name": nm, "state": "stalled"}  # 待命 idle 一直未转 working
+            return {"name": cand[0][0], "state": "stalled"}
         time.sleep(poll)
 
 
@@ -472,7 +515,8 @@ def cmd_result(name: str) -> dict:
     agent = _agent_get_or_none(name)
     if agent is not None:
         jsonl = (agent.get("agent_session") or {}).get("value")
-    if not jsonl:
+    if not jsonl or not Path(jsonl).is_file():
+        # value 无效（jsonl 尚未创建/已陈旧）时回退注册表 workdir 的 glob
         entry = _registry_load().get(name)
         if entry:
             wd = Path(entry["workdir"])

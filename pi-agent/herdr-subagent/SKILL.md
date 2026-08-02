@@ -86,11 +86,21 @@ uv run --script <技能目录>/scripts/subagent.py wait <name> [<name>...] [--ti
 | `done` | 未被见过的后台完成 | 取结果（Step 4） |
 | `blocked` | 子代理在提问/请求审批 | 转交人，或 `herdr agent send-keys`/`agent prompt` 介入 |
 | `stalled` | 超时无生命周期变化 | `herdr agent read <name>` 瞄一眼再决定 |
-| `done`（agent 已退出） | 子代理进程已不在 | 取结果（可能不完整），然后 close |
+| `exhausted` | 没有可等的子代理（候选全是死名字/已处理） | 停止等待循环；`name` 为空字符串 |
+| `done`（agent 已退出） | spawn 过但进程已不在 | 取结果（可能不完整），然后 close |
 
 `--timeout` 默认 120000ms。一次盯多个名时谁先停返回谁，便于并行逐个接手。
 
-**完成条件**：输出 `{name, state}`；按上表选择下一步（取结果 / 介入 / 瞄一眼）。
+**并行接手（必须成对）**：wait 返回 settled（idle/done）后，必须 **result + close 成对**处理，
+并把该名字移出下次 wait 的列表，否则它会一直挡住 wait（无消费标记，close 才让位）。
+已 close/未 spawn 的死名字会被 wait 自动跳过、不报 done——列表里留着旧名字无害，
+但全部被跳过时 wait 报 `exhausted`（`name` 为空，循环终止信号）。
+
+**settled 有 working 门槛**：idle/done 须曾进入 `working` 才被认作完成（痕迹持久化在
+注册表），防止把 task 前的空闲待命（idle、会话文件未建）误判为完成——否则 result 只能
+回退到带启动横幅的 transcript。
+
+**完成条件**：输出 `{name, state}`；按上表选择下一步（取结果 / 介入 / 瞄一眼 / 停止）。
 
 ### Step 4：result - 抽取最终回复
 
