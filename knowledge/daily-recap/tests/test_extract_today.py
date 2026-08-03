@@ -134,9 +134,69 @@ def test_collect_sessions_keeps_only_workday_window(tmp_path):
         "2026-07-18T21:00:00.000Z",
         "窗口外 CST次日05:00",
     )
-    sessions = extract_today.collect_sessions(date(2026, 7, 18), pi_dir, tmp_path / "omp-empty")
+    sessions, filtered_out = extract_today.collect_sessions(
+        date(2026, 7, 18), pi_dir, tmp_path / "omp-empty"
+    )
     ids = [s["session_id"] for s in sessions]
     assert ids == ["uuid-1"]
+    assert filtered_out == []  # 窗口外会话不算"被过滤"，只有窗口内被滤的才可见
+
+
+def test_collect_sessions_surfaces_filtered_sessions(tmp_path):
+    """min_msgs/exclude 过滤掉的窗口内会话必须可见（防假空集）。
+
+    total: 0 若由过滤造成，调用方应能从 filtered_out 看到被滤会话，
+    而不是误判"目标工作日无会话"直接终止。
+    """
+    pi_dir = tmp_path / "pi-sessions"
+    _make_pi_session(
+        pi_dir,
+        "2026-07-18T02-00-00-000Z",
+        "uuid-1",
+        "2026-07-18T02:00:00.000Z",
+        "实质会话",
+        n_msgs=12,
+    )
+    _make_pi_session(
+        pi_dir,
+        "2026-07-18T03-00-00-000Z",
+        "uuid-2",
+        "2026-07-18T03:00:00.000Z",
+        "短 stub",
+        n_msgs=2,
+    )
+    _make_pi_session(
+        pi_dir,
+        "2026-07-18T04-00-00-000Z",
+        "uuid-3",
+        "2026-07-18T04:00:00.000Z",
+        "被排除会话",
+        n_msgs=15,
+    )
+    sessions, filtered_out = extract_today.collect_sessions(
+        date(2026, 7, 18), pi_dir, tmp_path / "omp-empty", min_msgs=10, exclude="uuid-3"
+    )
+    assert [s["session_id"] for s in sessions] == ["uuid-1"]
+    by_id = {f["session_id"]: f for f in filtered_out}
+    assert set(by_id) == {"uuid-2", "uuid-3"}
+    assert by_id["uuid-2"]["reason"] == "min_msgs"
+    assert by_id["uuid-2"]["msg_count"] == 2
+    assert by_id["uuid-3"]["reason"] == "excluded"
+
+
+def test_recap_before_noon_current_session_outside_window():
+    """12:00 前跑 recap：目标工作日是昨天，当前会话必然在窗口外。
+
+    回归实测事故：08-03 08:46 CST 跑 recap，目标工作日 08-02，
+    窗口 [08-02 04:00, 08-03 04:00) CST；当前会话 08:46 CST 在窗口外。
+    技能曾用"当前会话必在窗口内"反证空集——该前提在 12:00 前恒不成立。
+    """
+    now = datetime(2026, 8, 3, 8, 46, tzinfo=CST)
+    target = extract_today.choose_target_workday(now)
+    assert target == date(2026, 8, 2)
+    window = extract_today.workday_window(target)
+    # 当前会话 timestamp（UTC）= 08-03 00:46Z = 08:46 CST
+    assert extract_today.session_in_window("2026-08-03T00:46:16.000Z", window) is False
 
 
 if __name__ == "__main__":
