@@ -13,7 +13,7 @@
 | 症状 | 原因 | 操作 |
 |------|------|------|
 | `nmem threads list` 无窗口内线程但本机有数据 | 远程无同步或当日未用 nmem | 正常，走纯本机路径（非失败） |
-| 翻页后仍担心漏线程 | 列表排序**不是严格日期序**（按导入批次混杂） | `--offset` 递增分页，连续多页不出现窗口内线程才停；不能「翻到日期下界即停」 |
+| 翻页后仍担心漏线程 | 列表排序**不是严格日期序**（按导入批次混杂） | 分页停止规则见 SKILL.md Step 0「分页」 |
 | `nmem threads show` 只返回 10 条消息 | 默认 `--limit 10` | **必须显式传 `--limit`**（如 300）；消息更多时 `--offset` 续读 |
 | `nmem threads show` 404/not found | 线程 id 前缀漂移（同一会话 `pi-`/`omp-` 都可能出现）或 id 无效 | 用 `nmem threads search <关键词>` 语义检索定位；仍失败则标记「内容待补充」，不阻塞整体（批准条目需回头告知用户，见 SKILL.md 4a） |
 | 线程读取失败/空线程 | 服务端问题 | 标记「内容待补充」，不阻塞整体 |
@@ -24,7 +24,7 @@
 | 症状 | 原因 | 操作 |
 |------|------|------|
 | 会话 jsonl 文件不可读 | 权限问题或路径变更 | 该会话标记 error，内容降级为 title + 消息数 |
-| `extract_today.py` `total: 0` | 两种可能：真无会话 / 全被过滤 | 看 `total_raw`/`filtered` 区分（见 SKILL.md Step 0 空集反证），不直接终止。**不得用「当前会话应在窗口内」反证**——12:00 前跑 recap 时当前会话恒在窗口外 |
+| `extract_today.py` `total: 0` | 两种可能：真无会话 / 全被过滤 | 看 `total_raw`/`filtered_out` 区分（见 SKILL.md Step 0 空集反证），不直接终止 |
 | `find -newermt` 找不到会话文件 | WSL/find 行为差异（疑似） | 勿依赖 mtime 找会话；一律按文件名日期前缀筛（脚本粗筛即此法） |
 | `obsidian-helper.py` 失败/配置缺失 | 脚本未找到或 `CONFIG_MISSING=true` | 询问用户 vault 路径，创建 `~/.config/cnife-skills/obsidian-diary.json` 后重试；写入降级为直接 Edit 文件 |
 
