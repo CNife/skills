@@ -23,7 +23,7 @@ cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 10
 # 跳过 stub 会话；仍含大量 title=null 会话则一次性提到 15，不反复重跑
 ```
 
-不带 `--date`，脚本自动选择目标工作日并在输出 JSON 顶层 `date` 字段返回。**读这个 `date` 作为目标工作日，后续远程粗筛、候选表筛选、时间窗口核实全部复用它**。整理历史日期才显式传 `--date YYYY-MM-DD`。`total` 是 `--min-msgs` 过滤**后**的计数，`total_raw`/`filtered` 字段记录过滤前计数与被滤会话清单——`total: 0` 不等于无会话，见下方空集反证。
+不带 `--date`，脚本自动选择目标工作日并在输出 JSON 顶层 `date` 字段返回。**读这个 `date` 作为目标工作日，后续远程粗筛、候选表筛选、时间窗口核实全部复用它**。整理历史日期才显式传 `--date YYYY-MM-DD`。`total` 是 `--min-msgs` 过滤**后**的计数，`total_raw`/`filtered_out` 字段记录过滤前计数与被滤会话清单——`total: 0` 不等于无会话，见下方空集反证。
 
 拿到 `date` 后立即回显：「整理目标工作日：{date}（脚本自动选择，改期用 `--date`）」，让日期错误第一轮就能被发现。用户纠正则带 `--date YYYY-MM-DD` 重跑脚本，用新 `date` 走后续流程。
 
@@ -39,10 +39,10 @@ cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 10
 
 **降级**：nmem CLI 连接失败/超时（退出码非 0，stderr 报 connecting/timeout）-> Hard stop，见 `references/recovery-guide.md`：询问用户是否仅看本机会话。
 
-**空集反证**：脚本 `total: 0` 时看 `total_raw`/`filtered` 区分两种情况：
+**空集反证**：脚本 `total: 0` 时看 `total_raw`/`filtered_out` 区分两种情况：
 
 - `total_raw: 0`：窗口内真无会话。**不得用「当前会话应在窗口内」反证**——12:00 前跑 recap 时目标工作日是昨天，当前会话必然在窗口外（窗口止于今晨 04:00），反证前提恒不成立。仅当远程也无候选时，告知用户"目标工作日没有会话记录"并终止。
-- `total_raw > 0` 且 `filtered` 非空：有会话但全被过滤（`min_msgs`/`exclude`）。查看 `filtered` 清单判断是否为 stub；若有实质内容，调低 `--min-msgs` 重跑。
+- `total_raw > 0` 且 `filtered_out` 非空：有会话但全被过滤。查看 `filtered_out` 清单判断：若多为短 stub，确认无实质内容后照常终止；若有实质内容（reason 为 `min_msgs`），调低 `--min-msgs` 重跑；若全被 `exclude` 排除（reason 为 `excluded`），检查排除参数是否误传，按需重跑。
 
 **分流**：
 
@@ -137,6 +137,8 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 5. **返回证据包文本**：每条含关键结论、带来源的数字、决策、建议的叙事角度。返回即止。
 
 **批准条目的处置**（Step 3 已批准但无法落地的情况）：本机会话核验发现窗口外、或远程线程读取失败无原文支撑——都**不静默丢弃也不硬写**，回头告知用户，由用户拍板删除、留待补充或降级为不记录。
+
+**会话未完成但内容有效**（如 CI 修复会话在结论落地前截断）：标注「未完成」，只写已确认的部分，不把未验证的意图写成既成事实。
 
 **降级**：若 subagent 环境 nmem CLI 不可用，远程线程改由主 agent 串行 `nmem threads show`，混合主题（本机+远程）的综合也落回主 agent。单会话读取失败标记「内容待补充」，不阻塞该主题域（但触发上方「批准条目的处置」）。
 

@@ -134,18 +134,18 @@ def test_collect_sessions_keeps_only_workday_window(tmp_path):
         "2026-07-18T21:00:00.000Z",
         "窗口外 CST次日05:00",
     )
-    sessions, filtered = extract_today.collect_sessions(
+    sessions, filtered_out = extract_today.collect_sessions(
         date(2026, 7, 18), pi_dir, tmp_path / "omp-empty"
     )
     ids = [s["session_id"] for s in sessions]
     assert ids == ["uuid-1"]
-    assert filtered == []  # 窗口外会话不算"被过滤"，只有窗口内被滤的才可见
+    assert filtered_out == []  # 窗口外会话不算"被过滤"，只有窗口内被滤的才可见
 
 
 def test_collect_sessions_surfaces_filtered_sessions(tmp_path):
     """min_msgs/exclude 过滤掉的窗口内会话必须可见（防假空集）。
 
-    total: 0 若由过滤造成，调用方应能从 filtered 看到被滤会话，
+    total: 0 若由过滤造成，调用方应能从 filtered_out 看到被滤会话，
     而不是误判"目标工作日无会话"直接终止。
     """
     pi_dir = tmp_path / "pi-sessions"
@@ -173,11 +173,11 @@ def test_collect_sessions_surfaces_filtered_sessions(tmp_path):
         "被排除会话",
         n_msgs=15,
     )
-    sessions, filtered = extract_today.collect_sessions(
+    sessions, filtered_out = extract_today.collect_sessions(
         date(2026, 7, 18), pi_dir, tmp_path / "omp-empty", min_msgs=10, exclude="uuid-3"
     )
     assert [s["session_id"] for s in sessions] == ["uuid-1"]
-    by_id = {f["session_id"]: f for f in filtered}
+    by_id = {f["session_id"]: f for f in filtered_out}
     assert set(by_id) == {"uuid-2", "uuid-3"}
     assert by_id["uuid-2"]["reason"] == "min_msgs"
     assert by_id["uuid-2"]["msg_count"] == 2
