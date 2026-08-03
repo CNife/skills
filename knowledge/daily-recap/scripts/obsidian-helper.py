@@ -25,7 +25,7 @@ def _load_vaults() -> dict[str, dict]:
     if not CONFIG_PATH.exists():
         print("CONFIG_MISSING=true", file=sys.stdout)
         print(f"CONFIG_PATH={CONFIG_PATH}", file=sys.stdout)
-        print("", file=sys.stdout)
+        print(file=sys.stdout)
         print("Obsidian diary configuration not found.", file=sys.stdout)
         print(f"Please create {CONFIG_PATH} with the following structure:", file=sys.stdout)
         print(file=sys.stdout)

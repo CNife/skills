@@ -19,7 +19,8 @@ Usage:
     uv run --script extract_today.py --min-msgs 3             # 跳过 stub 会话
     uv run --script extract_today.py --exclude <uuid>         # 排除指定 session
 
-Output: JSON to stdout with sessions array sorted by timestamp.
+Output: JSON to stdout — date, total（过滤后）, total_raw（窗口内未过滤）,
+filtered（被 min_msgs/exclude 滤掉的窗口内会话摘要）, sessions（按 timestamp 排序）.
 
 Each session has: agent, filepath, session_id, timestamp, time_cst, title,
 cwd, project, msg_count, first_user_msg, last_assistant_summary, error.
@@ -227,8 +228,7 @@ def parse_project(filepath: Path) -> str:
     # Strip outer -- and split
     raw = raw.strip("-")
     # home-cnife- prefix -> drop
-    if raw.startswith("home-cnife-"):
-        raw = raw[len("home-cnife-") :]
+    raw = raw.removeprefix("home-cnife-")
     # mnt-c- prefix -> /mnt/c/
     if raw.startswith("mnt-c-"):
         return "/mnt/c/" + raw[len("mnt-c-") :]
@@ -347,8 +347,13 @@ def collect_sessions(
     *,
     min_msgs: int = 0,
     exclude: str | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """收集目标工作日窗口内的会话（粗筛多前缀 + 04:00 精确切分）。
+
+    返回 (sessions, filtered)：sessions 是通过过滤的会话；filtered 是窗口内
+    但被 min_msgs/exclude 滤掉的会话摘要（session_id/title/msg_count/reason）。
+    total: 0 而 filtered 非空时是"全被过滤"，不是"当日无会话"——调用方必须
+    区分，不得据此终止。
 
     粗筛：coarse_utc_prefixes 给出 UTC 文件名日期前缀，扫到跨 UTC 日期的
     候选文件。精确切：读 session 行 timestamp，session_in_window 判断是否
@@ -357,33 +362,35 @@ def collect_sessions(
     window = workday_window(target_workday)
     prefixes = coarse_utc_prefixes(target_workday)
     sessions: list[dict] = []
+    filtered: list[dict] = []
 
-    for fp in find_session_files(pi_dir, prefixes):
-        s = extract_pi_session(fp)
-        if exclude and s["session_id"] and exclude in s["session_id"]:
-            continue
-        if not session_in_window(s.get("timestamp") or "", window):
-            continue
-        if s["msg_count"] < min_msgs:
-            continue
-        s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
-        s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
-        sessions.append(s)
-
-    for fp in find_session_files(omp_dir, prefixes):
-        s = extract_omp_session(fp)
-        if exclude and s["session_id"] and exclude in s["session_id"]:
-            continue
-        if not session_in_window(s.get("timestamp") or "", window):
-            continue
-        if s["msg_count"] < min_msgs:
-            continue
-        s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
-        s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
-        sessions.append(s)
+    for dir_, extractor in ((pi_dir, extract_pi_session), (omp_dir, extract_omp_session)):
+        for fp in find_session_files(dir_, prefixes):
+            s = extractor(fp)
+            if not session_in_window(s.get("timestamp") or "", window):
+                continue
+            reason = None
+            if exclude and s["session_id"] and exclude in s["session_id"]:
+                reason = "excluded"
+            elif s["msg_count"] < min_msgs:
+                reason = "min_msgs"
+            if reason:
+                filtered.append(
+                    {
+                        "session_id": s["session_id"],
+                        "title": s.get("title"),
+                        "msg_count": s["msg_count"],
+                        "reason": reason,
+                    }
+                )
+                continue
+            s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
+            s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
+            sessions.append(s)
 
     sessions.sort(key=lambda x: x.get("timestamp") or "")
-    return sessions
+    filtered.sort(key=lambda x: x.get("msg_count") or 0)
+    return sessions, filtered
 
 
 # ── main ──────────────────────────────────────────────────────────────────
@@ -396,14 +403,20 @@ def main():
     else:
         target_workday = choose_target_workday(datetime.now(CST))
 
-    sessions = collect_sessions(
+    sessions, filtered = collect_sessions(
         target_workday,
         PI_SESSION_DIR,
         OMP_SESSION_DIR,
         min_msgs=args["min_msgs"],
         exclude=args["exclude"],
     )
-    output = {"date": target_workday.isoformat(), "total": len(sessions), "sessions": sessions}
+    output = {
+        "date": target_workday.isoformat(),
+        "total": len(sessions),
+        "total_raw": len(sessions) + len(filtered),
+        "filtered": filtered,
+        "sessions": sessions,
+    }
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
