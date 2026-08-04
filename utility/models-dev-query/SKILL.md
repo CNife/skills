@@ -16,27 +16,34 @@ disable-model-invocation: true
 |------|------|------|
 | `providers/` | 目录列表，子目录名 = provider-id | 列出所有提供商 |
 | `providers/<id>/provider.toml` | `name` / `api` / `env[]` / `npm` / `doc` | 提供商 API 配置 |
-| `providers/<id>/models/` | 目录列表，`<model-id>.toml` | 列出某提供商的模型 |
+| `providers/<id>/models/` | 目录列表，可能含一层按厂商分组的子目录 | 列出某提供商的模型 |
 | `providers/<id>/models/<model>.toml` | `cost`（USD/M）、`status`、`reasoning_options`、`interleaved`、能力字段 | 该提供商视角的模型 |
 | `models/<provider>/<model>.toml` | 能力、`limit`、`modalities`、`benchmarks`、`weights`、`knowledge` | 模型规格（canonical） |
 
+**子目录**：`providers/<id>/models/` 下常有一层按模型厂商分组的子目录（如 `anyapi` 的 `models/openai/o4-mini.toml`、`togetherai` 的 `models/zai-org/GLM-5.toml`），少数还有更深层级；确切路径以目录列表为准。
+
 **base_model 继承**：provider 层 TOML 含 `base_model = "<provider>/<model>"` 时，能力字段（attachment / reasoning / limit / modalities 等）不重写，继承自 canonical 文件 `models/<provider>/<model>.toml`。无 `base_model` 的 provider 层 TOML 字段自足。
 
-**读取方式**（本地镜像优先，查询零网络）：镜像 = 仓库 tarball（gzip 后仅 ~1MB），一次解压、按需重下。
+**读取方式**（离线优先）：镜像 = 仓库 tarball（gzip 后仅 ~1MB），一次解压；需要最新数据时设 `MODELS_DEV_REFRESH=1` 重下。
 
 ```bash
-MODELS_DEV=${MODELS_DEV:-~/.cache/models-dev}
-if [ ! -f "$MODELS_DEV/.complete" ]; then
-  mkdir -p "$MODELS_DEV"
-  curl -sL https://github.com/anomalyco/models.dev/archive/refs/heads/dev.tar.gz \
-    | tar -xz --strip-components=1 -C "$MODELS_DEV"
-  touch "$MODELS_DEV/.complete"
+MODELS_DEV=${MODELS_DEV:-$HOME/.cache/models-dev}
+if [ ! -f "$MODELS_DEV/.complete" ] || [ "$MODELS_DEV_REFRESH" = 1 ]; then
+  mkdir -p "${MODELS_DEV%/*}"
+  tmp=$(mktemp -d)   # 解压到临时目录，成功才整体替换，失败不污染旧镜像
+  if curl -sfL https://github.com/anomalyco/models.dev/archive/refs/heads/dev.tar.gz \
+      | tar -xz --strip-components=1 -C "$tmp"; then
+    rm -rf "$MODELS_DEV"
+    mv "$tmp" "$MODELS_DEV"
+    touch "$MODELS_DEV/.complete"
+  else
+    rm -rf "$tmp"   # 解压失败：丢弃临时目录，.complete 不写入
+    exit 1          # 显式失败，改用下方 gh api 备选
+  fi
 fi
-curl -sL https://github.com/anomalyco/models.dev/archive/refs/heads/dev.tar.gz \
-  | tar -xz --strip-components=1 -C "$MODELS_DEV"   # 需要最新数据时重下（~1MB）
 ```
 
-之后所有查询直接读本地文件：TOML 在 `<镜像>/<path>`，目录即本地目录列表，零网络请求。上游个别模型是断链 symlink（全仓约 32 个），读不到时标注 `N/A`。备选（无 curl/tar 环境）：gh api 单文件拉取，文件取原文、目录取 JSON 数组（取 `type`/`name`）：
+之后所有查询直接读本地文件：TOML 在 `<镜像>/<path>`，目录即本地目录列表，全程离线。上游个别模型读不到（断链 symlink 全仓约 32 个，或 `base_model` 指向的 canonical 文件不存在），该字段标注 `N/A`。备选（无 curl/tar 环境）：gh api 单文件拉取，文件取原文、目录取 JSON 数组（取 `type`/`name`）：
 
 ```bash
 gh api "repos/anomalyco/models.dev/contents/<path>?ref=dev" -H "Accept: application/vnd.github.raw+json"
@@ -63,7 +70,7 @@ gh api "repos/anomalyco/models.dev/contents/<path>?ref=dev" -H "Accept: applicat
 
 ### 单模型画像（能力 + 定价 + 评测）
 
-1. 读 `providers/<id>/models/<model>.toml`——定价、推理选项、该提供商的能力覆盖。
+1. 读 provider 层模型 TOML（`providers/<id>/models/` 下，有子目录时路径含中间层）——定价、推理选项、该提供商的能力覆盖。
 2. 含 `base_model`，或文件缺能力字段 → 读 `models/<provider>/<model>.toml` 补齐能力、limit、benchmarks、weights。
 3. 两层合并呈现。
 
@@ -74,11 +81,11 @@ gh api "repos/anomalyco/models.dev/contents/<path>?ref=dev" -H "Accept: applicat
 ### 列出提供商 / 模型
 
 - 所有提供商：`providers/` 下的目录名即 provider-id。
-- 某提供商的模型：`providers/<id>/models/` 下的 `<model-id>.toml` 文件名。
+- 某提供商的模型：`providers/<id>/models/` 下的模型 TOML 文件名（有子目录时含中间层）。
 
 ### 批量筛选 / 比较（开源、低价、最近发布）
 
-在镜像内本地遍历全部模型 TOML，零网络：
+在镜像内本地遍历全部模型 TOML（离线）：
 
 ```bash
 find "$MODELS_DEV/models" "$MODELS_DEV/providers" -name '*.toml' -type f
