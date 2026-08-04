@@ -30,6 +30,7 @@
 
 ## 时间口径备忘
 
-- 线程 `created_at` 是**日级 UTC 日期**（"Aug 02, 2026"）；±2 天粗筛窗口已覆盖 1 天时区偏移。远程线程无消息级时间戳，日级判定即最终判定（见 SKILL.md Step 0）。
+- 线程 `created_at` 是**日级 UTC 日期**（"Aug 02, 2026"）；±2 天粗筛窗口已覆盖 1 天时区偏移。**日级不是最终判定**——最终判定用 nmem REST 接口的消息级时间戳（见 SKILL.md Step 0 时间口径）。
+- nmem 本地 REST：`GET <nmem config get-url>/threads/<完整 id 含前缀>?limit=1` 返回首条消息 `created_at`（UTC ISO）；用 `uv run` 跑脚本时注意其沙箱代理会拦截 localhost 请求（表现为全 404），用系统 `python3` 直跑。
 - 会话 jsonl 的 timestamp 是 **UTC**：00:42Z = 08:42 CST，勿误读；核验用「消息不可能早于线程创建」逻辑交叉验证。
 - 本机脚本输出 `time_cst` 已换算，无需手算。
