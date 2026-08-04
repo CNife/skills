@@ -34,7 +34,7 @@ cd <skill目录> && uv run --script scripts/extract_today.py --min-msgs 10
 拿到 `date` 后用 `nmem threads list --limit 200 --json` 列举近期线程。返回结构 `{threads, total}`：每个线程只有 `id`/`title`/`created_at`/`messages`（消息数）/`source`，**没有 summary 字段，没有 has_more 分页标记**。
 
 - **粗筛**：按线程 `created_at`（日级，英文格式如 "Aug 02, 2026"）判断月份+日，取目标工作日 ±2 天纳入候选。
-- **时间口径（最终判定）**：远程线程没有消息级时间戳（消息只有 content/index/role），**日级 `created_at` 即最终判定**，不存在 [04:00, 次日 04:00) 的精确切分。误差窗口最多 ±4 小时（当天 00:00-04:00 的会话可能被误纳入），需用户接受，在候选表呈现时向用户说明。
+- **时间口径**：`nmem threads list` 的 `created_at` 是**日级**（UTC 日期，格式如 "Aug 02, 2026"），只作粗筛（取目标工作日 ±2 天）。**最终判定必须用消息级时间戳**：CLI `threads show` 的消息只有 content/index/role 无时间戳，但 **nmem 本地 REST 接口**（地址 `nmem config get-url`，默认 `http://127.0.0.1:14242`）`GET /threads/<完整 id 含 pi-/omp- 前缀>?limit=1` 返回的消息带 `created_at`（UTC ISO）。Step 4 扇出前主 agent 批量取每条候选线程首条消息时间戳转 CST，精确判定 [04:00, 次日 04:00) 窗口；窗口外线程剔除并回用户确认（见「批准条目的处置」）。误差不止 ±4 小时——日级是 UTC 日、与 CST 窗口差 8 小时，08-02 20:00Z~08-03 20:00Z 才是 08-03 窗口，日级粗筛会混入大量窗口外线程。
 - **分页**：列表排序**不是严格日期序**（按导入批次混杂），不能「翻到日期下界即停」。分页（`--offset` 递增）直到**连续多页不再出现目标工作日 ±2 天的线程**才停，并把翻页范围告知用户。
 
 **降级**：nmem CLI 连接失败/超时（退出码非 0，stderr 报 connecting/timeout）-> Hard stop，见 `references/recovery-guide.md`：询问用户是否仅看本机会话。
@@ -124,7 +124,7 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 **统一接口说明**（写进 systemPrompt，逐字传达）：
 
 - 本机会话：`grep` 搜 jsonl 内的工具调用路径 + `read`（带 offset/limit）定向读关键行
-- 远程线程：`nmem threads show <thread_id> --limit 300 --json`（**默认只返回 10 条消息，必须显式传 `--limit`**）；消息数超 300 时用 `--offset` 续读；消息只有 content/index/role，**无时间戳**
+- 远程线程：`nmem threads show <thread_id> --limit 300 --json`（**默认只返回 10 条消息，必须显式传 `--limit`**）；消息数超 300 时用 `--offset` 续读；CLI 消息只有 content/index/role，**无时间戳**。需要消息级时间戳时改用 nmem 本地 REST：`GET <nmem config get-url>/threads/<完整 id 含前缀>?limit=N&offset=M`（本机 local 模式免鉴权），返回 `{thread, messages:[{created_at,...}], total_messages}`，`created_at` 为 UTC ISO
 - 线程 id 前缀可能在 `pi-`/`omp-` 间漂移（同一会话两种前缀都可能出现）：`nmem threads show` 404 时用 `nmem threads search <关键词>` 语义检索定位
 - **大线程（>100 条消息）只读首尾**：先 `--limit 30` 读开头，再 `--offset <总数-30>` 读结尾，中段只在关键信息缺失时定向补读
 
@@ -132,7 +132,7 @@ Step 0 已运行的 `extract_today.py` 输出即为本机会话的**完整证据
 
 1. **读会话**：按上方统一接口说明执行。
 2. **自发现产出物路径**：从会话的工具调用里抽 read/write/edit 涉及的文件路径，筛出关键文档（方案/规格/issue/报告），`read` 它们确认内容。
-3. **时间窗口核验**：**仅本机会话**——`messages[0].timestamp` 转 CST，确认落在目标工作日窗口 [04:00, 次日 04:00)，窗口外剔除。远程线程无消息时间戳，Step 0 的日级判定已是最终判定，不重复核验。
+3. **时间窗口核验**：本机会话——`messages[0].timestamp` 转 CST，确认落在目标工作日窗口 [04:00, 次日 04:00)，窗口外剔除。远程线程——同样用 REST 接口取首条消息 `created_at` 转 CST 核验（见 Step 0 时间口径），窗口外剔除并在证据包注明；REST 不可用时才退回日级判定。
 4. **内容提取**：提取 title 没有的结构化细节（关键决策、参数、产出物、数字），供 bullet 追溯。
 5. **返回证据包文本**：每条含关键结论、带来源的数字、决策、建议的叙事角度。返回即止。
 
