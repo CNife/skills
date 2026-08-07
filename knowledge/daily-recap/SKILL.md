@@ -30,7 +30,7 @@ nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py 
 
 `--filter` 模式从 stdin 读 nmem 线程列表，按 UUID v7 时间戳（线程 id 前 48 位 = 会话开始时间毫秒戳，见 CONTEXT.md「线程 ID 时间戳」）精确判定窗口归属，输出 `candidates`（窗口内）和 `excluded`（窗口外）。
 
-**分页**：`nmem threads list` 排序不是严格日期序（按导入批次混杂），`--offset` 递增翻页，每页管道 `--filter`，直到连续一页无窗口内候选才停，并把翻页范围告知用户。
+**分页**：`nmem threads list` 排序不是严格日期序（按导入批次混杂），`--offset` 递增翻页，每页管道 `--filter`，直到连续多页无窗口内候选才停，并把翻页范围告知用户。
 
 **滤 stub 与无关线程**（从 candidates 中）：
 
@@ -67,7 +67,7 @@ nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py 
 
 > recap-collector 的角色、统一接口（nmem CLI 读法 / UUID v7 窗口复核 / 大线程首尾 / 产出物确认）、返回格式、降级策略全在 `agents/recap-collector.md` 的 systemPrompt 里，不在此重复。每次调用的 `task` 按 `references/collector-task-template.md` 模板填充（主题域 / 目标工作日 / 会话清单 / 重点核实项）。
 
-**耗时预期**：单个收集 collector 约 5-12 分钟，核验 collector 约 10 分钟。扇出前向用户说明预期耗时，避免误以为卡死。
+**耗时预期**：单个收集 collector 约 5-12 分钟，核验 subagent 约 10 分钟。扇出前向用户说明预期耗时，避免误以为卡死。
 
 **扇出参数**：
 

@@ -26,6 +26,7 @@ UUID v7 前 48 位（12 hex）编码会话开始时间的毫秒级 Unix 时间�
 直接解析，无需 REST 调用（见 CONTEXT.md「线程 ID 时间戳」）。
 """
 
+import argparse
 import json
 import sys
 from datetime import UTC, date, datetime, timedelta
@@ -37,19 +38,19 @@ CST = ZoneInfo("Asia/Shanghai")
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def parse_args() -> dict[str, str | bool | None]:
-    args: dict[str, str | bool | None] = {"date": None, "filter": False}
-    i = 1
-    while i < len(sys.argv):
-        arg = sys.argv[i]
-        if arg == "--date":
-            i += 1
-            args["date"] = sys.argv[i]
-        elif arg == "--filter":
-            args["filter"] = True
-        elif not arg.startswith("--"):
-            args["date"] = arg
-        i += 1
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="确定目标工作日，并可按 UUID v7 时间窗口过滤 nmem 线程。"
+    )
+    parser.add_argument(
+        "date", nargs="?", default=None, help="目标工作日 YYYY-MM-DD（默认自动选择）"
+    )
+    parser.add_argument(
+        "--date", dest="date_opt", default=None, help="同位置参数，显式指定目标工作日"
+    )
+    parser.add_argument("--filter", action="store_true", help="从 stdin 读 nmem JSON 按窗口过滤")
+    args = parser.parse_args()
+    args.date = args.date_opt or args.date
     return args
 
 
@@ -120,10 +121,10 @@ def filter_threads(
     """
     candidates: list[dict] = []
     excluded: list[dict] = []
+    start, end = window
     for t in threads:
-        tid = t.get("id", "")
-        ts = uuid_v7_timestamp(tid)
-        if ts is None or thread_in_window(tid, window):
+        ts = uuid_v7_timestamp(t.get("id", ""))
+        if ts is None or start <= ts < end:
             candidates.append(t)
         else:
             excluded.append(t)
@@ -135,12 +136,12 @@ def filter_threads(
 
 def main():
     args = parse_args()
-    if args["date"]:
-        target_workday = date.fromisoformat(args["date"])
+    if args.date:
+        target_workday = date.fromisoformat(args.date)
     else:
         target_workday = choose_target_workday(datetime.now(CST))
 
-    if args["filter"]:
+    if args.filter:
         # 从 stdin 读 nmem threads list --json 输出，按 UUID v7 窗口过滤
         data = json.load(sys.stdin)
         threads = data.get("threads", data) if isinstance(data, dict) else data
