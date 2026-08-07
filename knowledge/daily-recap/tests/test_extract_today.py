@@ -3,25 +3,33 @@
 # requires-python = ">=3.11"
 # dependencies = ["pytest>=8"]
 # ///
-"""extract_today.py 的测试 - 04:00 工作日窗口切分 + 12:00 总结分界逻辑。
+"""extract_today.py 的测试 - 04:00 工作日窗口 + 12:00 总结分界 + UUID v7 时间过滤。
 
 运行：cd <skill目录> && uv run --script tests/test_extract_today.py
 """
 
 import sys
+from datetime import UTC, date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # 测试在 tests/，脚本目录不在 sys.path；显式加入以便 import 被测模块。
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-
-import json
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
 import extract_today
 import pytest
 
 CST = ZoneInfo("Asia/Shanghai")
+
+
+def _make_thread_id(dt_utc: datetime, prefix: str = "omp") -> str:
+    """构造 UUID v7 thread id：前 48 位（12 hex）= 毫秒时间戳，版本位 = 7。"""
+    ms = int(dt_utc.timestamp() * 1000)
+    hex_ms = f"{ms:012x}"
+    return f"{prefix}-{hex_ms[:8]}-{hex_ms[8:]}-7000-8000-000000000000"
+
+
+# ── 工作日窗口 ──────────────────────────────────────────────────────────────
 
 
 def test_workday_window_spans_04_to_next_day_04():
@@ -31,42 +39,7 @@ def test_workday_window_spans_04_to_next_day_04():
     assert end == datetime(2026, 7, 19, 4, 0, tzinfo=CST)
 
 
-@pytest.mark.parametrize(
-    "utc_ts, expected",
-    [
-        # 窗口 [2026-07-18 04:00 CST, 2026-07-19 04:00 CST) = UTC [07-17 20:00, 07-18 20:00)
-        ("2026-07-18T02:00:00Z", True),  # CST 07-18 10:00 窗口内
-        ("2026-07-17T19:00:00Z", False),  # CST 07-18 03:00 凌晨归前日
-        ("2026-07-18T19:00:00Z", True),  # CST 07-19 03:00 次日凌晨
-        ("2026-07-18T21:00:00Z", False),  # CST 07-19 05:00 窗口外
-        ("2026-07-17T20:00:00Z", True),  # CST 07-18 04:00 左边界闭
-        ("2026-07-18T20:00:00Z", False),  # CST 07-19 04:00 右边界开
-        ("2026-07-18T02:00:00.123Z", True),  # 带毫秒
-        ("2026-07-18T02:00:00+00:00", True),  # +00:00 后缀
-        ("2026-07-18T02-00-00-000Z", True),  # 文件名格式
-        ("", False),  # 空时间戳
-        ("garbage", False),  # 无法解析
-    ],
-)
-def test_session_in_window(utc_ts, expected):
-    window = extract_today.workday_window(date(2026, 7, 18))
-    assert extract_today.session_in_window(utc_ts, window) is expected
-
-
-def test_coarse_utc_prefixes_covers_window_plus_one_day_margin():
-    """粗筛前缀覆盖工作日窗口的 UTC 日期，前后各扩 1 天防边界漂移。
-
-    目标 2026-07-18 CST，窗口 UTC [07-17 20:00, 07-18 20:00)，
-    前缀 {07-16, 07-17, 07-18, 07-19}。
-    """
-    prefixes = extract_today.coarse_utc_prefixes(date(2026, 7, 18))
-    assert prefixes == ["2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19"]
-
-
-def test_coarse_utc_prefixes_crosses_month_boundary():
-    """跨月边界：目标 2026-07-01 窗口跨 6/7 月，前缀含 06-29..07-02。"""
-    prefixes = extract_today.coarse_utc_prefixes(date(2026, 7, 1))
-    assert prefixes == ["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02"]
+# ── 目标工作日选择 ──────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -91,97 +64,61 @@ def test_choose_target_workday(hour, minute, expected):
     assert extract_today.choose_target_workday(now) == expected
 
 
-def _make_pi_session(root, fname_ts, uuid, ts_iso, title, n_msgs=3):
-    """构造 pi 会话 jsonl：root/<proj>/<fname_ts>_<uuid>.jsonl。"""
-    proj = root / "home-cnife-code-testproj"
-    proj.mkdir(parents=True, exist_ok=True)
-    fpath = proj / f"{fname_ts}_{uuid}.jsonl"
-    session_line = json.dumps(
-        {"type": "session", "id": uuid, "timestamp": ts_iso, "cwd": "/home/cnife/code/testproj"}
-    )
-    lines = [session_line, json.dumps({"type": "session_info", "name": title})]
-    for i in range(n_msgs):
-        role = "user" if i % 2 == 0 else "assistant"
-        msg = {
-            "type": "message",
-            "message": {"role": role, "content": [{"type": "text", "text": f"msg {i}"}]},
-        }
-        lines.append(json.dumps(msg))
-    fpath.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return fpath
+# ── UUID v7 时间戳解析 ──────────────────────────────────────────────────────
 
 
-def test_collect_sessions_keeps_only_workday_window(tmp_path):
-    """端到端：粗筛多前缀扫到跨 UTC 日期文件，04:00 精确切分只留窗口内。
-
-    目标工作日 2026-07-18 CST，窗口 UTC [07-17 20:00, 07-18 20:00)。
-    """
-    pi_dir = tmp_path / "pi-sessions"
-    _make_pi_session(
-        pi_dir, "2026-07-18T02-00-00-000Z", "uuid-1", "2026-07-18T02:00:00.000Z", "窗口内 CST10:00"
-    )
-    _make_pi_session(
-        pi_dir,
-        "2026-07-17T19-00-00-000Z",
-        "uuid-2",
-        "2026-07-17T19:00:00.000Z",
-        "窗口外 CST03:00 凌晨",
-    )
-    _make_pi_session(
-        pi_dir,
-        "2026-07-18T21-00-00-000Z",
-        "uuid-3",
-        "2026-07-18T21:00:00.000Z",
-        "窗口外 CST次日05:00",
-    )
-    sessions, filtered_out = extract_today.collect_sessions(
-        date(2026, 7, 18), pi_dir, tmp_path / "omp-empty"
-    )
-    ids = [s["session_id"] for s in sessions]
-    assert ids == ["uuid-1"]
-    assert filtered_out == []  # 窗口外会话不算"被过滤"，只有窗口内被滤的才可见
+def test_uuid_v7_timestamp_roundtrip():
+    """构造的 UUID v7 thread id 能解析回原始 UTC 时间（毫秒精度）。"""
+    dt = datetime(2026, 7, 18, 2, 0, 0, tzinfo=UTC)
+    thread_id = _make_thread_id(dt)
+    parsed = extract_today.uuid_v7_timestamp(thread_id)
+    assert parsed == dt
 
 
-def test_collect_sessions_surfaces_filtered_sessions(tmp_path):
-    """min_msgs/exclude 过滤掉的窗口内会话必须可见（防假空集）。
+def test_uuid_v7_timestamp_strips_prefix():
+    """pi- 和 omp- 前缀都能正确剥离。"""
+    dt = datetime(2026, 7, 18, 2, 0, 0, tzinfo=UTC)
+    assert extract_today.uuid_v7_timestamp(_make_thread_id(dt, "pi")) == dt
+    assert extract_today.uuid_v7_timestamp(_make_thread_id(dt, "omp")) == dt
 
-    total: 0 若由过滤造成，调用方应能从 filtered_out 看到被滤会话，
-    而不是误判"目标工作日无会话"直接终止。
-    """
-    pi_dir = tmp_path / "pi-sessions"
-    _make_pi_session(
-        pi_dir,
-        "2026-07-18T02-00-00-000Z",
-        "uuid-1",
-        "2026-07-18T02:00:00.000Z",
-        "实质会话",
-        n_msgs=12,
-    )
-    _make_pi_session(
-        pi_dir,
-        "2026-07-18T03-00-00-000Z",
-        "uuid-2",
-        "2026-07-18T03:00:00.000Z",
-        "短 stub",
-        n_msgs=2,
-    )
-    _make_pi_session(
-        pi_dir,
-        "2026-07-18T04-00-00-000Z",
-        "uuid-3",
-        "2026-07-18T04:00:00.000Z",
-        "被排除会话",
-        n_msgs=15,
-    )
-    sessions, filtered_out = extract_today.collect_sessions(
-        date(2026, 7, 18), pi_dir, tmp_path / "omp-empty", min_msgs=10, exclude="uuid-3"
-    )
-    assert [s["session_id"] for s in sessions] == ["uuid-1"]
-    by_id = {f["session_id"]: f for f in filtered_out}
-    assert set(by_id) == {"uuid-2", "uuid-3"}
-    assert by_id["uuid-2"]["reason"] == "min_msgs"
-    assert by_id["uuid-2"]["msg_count"] == 2
-    assert by_id["uuid-3"]["reason"] == "excluded"
+
+def test_uuid_v7_timestamp_invalid():
+    """空/垃圾/过短 id 返回 None。"""
+    assert extract_today.uuid_v7_timestamp("") is None
+    assert extract_today.uuid_v7_timestamp("garbage") is None
+    assert extract_today.uuid_v7_timestamp("omp-short") is None
+    assert extract_today.uuid_v7_timestamp(None) is None
+
+
+# ── 线程窗口判定 ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "dt_utc, expected",
+    [
+        # 窗口 [2026-07-18 04:00 CST, 2026-07-19 04:00 CST) = UTC [07-17 20:00, 07-18 20:00)
+        (datetime(2026, 7, 18, 2, 0, tzinfo=UTC), True),  # CST 07-18 10:00 窗口内
+        (datetime(2026, 7, 17, 19, 0, tzinfo=UTC), False),  # CST 07-18 03:00 凌晨归前日
+        (datetime(2026, 7, 18, 19, 0, tzinfo=UTC), True),  # CST 07-19 03:00 次日凌晨
+        (datetime(2026, 7, 18, 21, 0, tzinfo=UTC), False),  # CST 07-19 05:00 窗口外
+        (datetime(2026, 7, 17, 20, 0, tzinfo=UTC), True),  # CST 07-18 04:00 左边界闭
+        (datetime(2026, 7, 18, 20, 0, tzinfo=UTC), False),  # CST 07-19 04:00 右边界开
+    ],
+)
+def test_thread_in_window(dt_utc, expected):
+    thread_id = _make_thread_id(dt_utc)
+    window = extract_today.workday_window(date(2026, 7, 18))
+    assert extract_today.thread_in_window(thread_id, window) is expected
+
+
+def test_thread_in_window_invalid_id():
+    """无法解析的线程 id 视为不在窗口内。"""
+    window = extract_today.workday_window(date(2026, 7, 18))
+    assert extract_today.thread_in_window("", window) is False
+    assert extract_today.thread_in_window("garbage", window) is False
+
+
+# ── 回归：12:00 前当前会话在窗口外 ──────────────────────────────────────────
 
 
 def test_recap_before_noon_current_session_outside_window():
@@ -189,14 +126,41 @@ def test_recap_before_noon_current_session_outside_window():
 
     回归实测事故：08-03 08:46 CST 跑 recap，目标工作日 08-02，
     窗口 [08-02 04:00, 08-03 04:00) CST；当前会话 08:46 CST 在窗口外。
-    技能曾用"当前会话必在窗口内"反证空集——该前提在 12:00 前恒不成立。
+    技能曾用"当前会话必在窗口内"反证空集--该前提在 12:00 前恒不成立。
     """
     now = datetime(2026, 8, 3, 8, 46, tzinfo=CST)
     target = extract_today.choose_target_workday(now)
     assert target == date(2026, 8, 2)
     window = extract_today.workday_window(target)
-    # 当前会话 timestamp（UTC）= 08-03 00:46Z = 08:46 CST
-    assert extract_today.session_in_window("2026-08-03T00:46:16.000Z", window) is False
+    # 当前会话 08:46 CST = 00:46 UTC，构造对应 UUID v7 thread id
+    current_thread = _make_thread_id(datetime(2026, 8, 3, 0, 46, 16, tzinfo=UTC))
+    assert extract_today.thread_in_window(current_thread, window) is False
+
+
+# ── 批量线程过滤 ────────────────────────────────────────────────────────────
+
+
+def test_filter_threads_splits_by_window():
+    """窗口内线程归候选，窗口外归排除。"""
+    window = extract_today.workday_window(date(2026, 7, 18))
+    in_id = _make_thread_id(datetime(2026, 7, 18, 2, 0, tzinfo=UTC))
+    out_id = _make_thread_id(datetime(2026, 7, 18, 21, 0, tzinfo=UTC))
+    threads = [
+        {"id": in_id, "title": "窗口内", "messages": 50},
+        {"id": out_id, "title": "窗口外", "messages": 30},
+    ]
+    candidates, excluded = extract_today.filter_threads(threads, window)
+    assert [c["id"] for c in candidates] == [in_id]
+    assert [e["id"] for e in excluded] == [out_id]
+
+
+def test_filter_threads_unparseable_goes_to_candidates():
+    """无法解析 UUID v7 的线程不丢弃，归入候选由 collector 复核。"""
+    window = extract_today.workday_window(date(2026, 7, 18))
+    threads = [{"id": "garbage", "title": "?", "messages": 5}]
+    candidates, excluded = extract_today.filter_threads(threads, window)
+    assert len(candidates) == 1
+    assert len(excluded) == 0
 
 
 if __name__ == "__main__":

@@ -3,79 +3,50 @@
 # requires-python = ">=3.11"
 # ///
 """
-extract_today.py - 提取目标工作日窗口内的 Pi/OMP 会话。
+extract_today.py - 确定目标工作日，并可按 UUID v7 时间窗口过滤 nmem 线程。
 
 工作日窗口以 CST 04:00 为界 [工作日 04:00, 次日 04:00)：凌晨 00:00-04:00
 的会话归前一工作日。"总结哪个工作日"以 12:00 为界（<12:00 昨天 / ≥12:00
 今天），默认由 recap 时刻自动选择，可用位置参数或 --date 显式指定。
 
-粗筛用 UTC 文件名日期前缀（窗口 ± 1 天），精确切读 session 行 timestamp 转 CST
-判断是否落在窗口内--文件名 UTC 前缀仅作粗筛，不作切分依据。
+nmem 是会话唯一来源（多机器同步）。本脚本确定目标工作日；--filter 模式从
+stdin 读 nmem threads list --json 输出，按 UUID v7 时间戳过滤窗口内候选。
 
 Usage:
     uv run --script extract_today.py                          # 目标工作日（自动）
     uv run --script extract_today.py 2026-07-09               # 指定工作日
     uv run --script extract_today.py --date 2026-07-09        # 同上，显式
-    uv run --script extract_today.py --min-msgs 3             # 跳过 stub 会话
-    uv run --script extract_today.py --exclude <uuid>         # 排除指定 session
+    nmem threads list --limit 200 --json | uv run --script extract_today.py --filter
+    nmem threads list --limit 200 --json | uv run --script extract_today.py --filter --date 2026-07-09
 
-Output: JSON to stdout — date, total（过滤后）, total_raw（窗口内未过滤）,
-filtered_out（被 min_msgs/exclude 滤掉的窗口内会话摘要）, sessions（按 timestamp 排序）.
+Output（默认）: JSON - date（目标工作日 YYYY-MM-DD）.
+Output（--filter）: JSON - date, total, candidates（窗口内线程）, excluded（窗口外）.
 
-Each session has: agent, filepath, session_id, timestamp, time_cst, title,
-cwd, project, msg_count, first_user_msg, last_assistant_summary, error.
-
-Session JSONL is a tree (id/parentId, in-place branching); this script reads
-it linearly-see references/{pi,omp}-session-format.md for why that suffices.
+UUID v7 前 48 位（12 hex）编码会话开始时间的毫秒级 Unix 时间戳，从线程 id
+直接解析，无需 REST 调用（见 CONTEXT.md「线程 ID 时间戳」）。
 """
 
 import json
-import re
 import sys
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
-# ── config ────────────────────────────────────────────────────────────────
-PI_SESSION_DIR = Path.home() / ".pi" / "agent" / "sessions"
-OMP_SESSION_DIR = Path.home() / ".omp" / "agent" / "sessions"
-CST_OFFSET = timedelta(hours=8)
 CST = ZoneInfo("Asia/Shanghai")
-
-# OMP emits extra entry types (model changes, compaction, branch summaries,
-# extension messages, ...) that Pi does not route through its message stream.
-# Skip them so msg_count reflects conversational messages only.
-OMP_SKIP_TYPES = frozenset(
-    {
-        "model_change",
-        "thinking_level_change",
-        "compaction",
-        "branch_summary",
-        "custom_message",
-        "session_init",
-        "mode_change",
-        "custom",
-    }
-)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def parse_args():
-    args = {"date": None, "min_msgs": 0, "exclude": None}
+def parse_args() -> dict[str, str | bool | None]:
+    args: dict[str, str | bool | None] = {"date": None, "filter": False}
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
-        if arg == "--min-msgs":
-            i += 1
-            args["min_msgs"] = int(sys.argv[i])
-        elif arg == "--exclude":
-            i += 1
-            args["exclude"] = sys.argv[i]
-        elif arg == "--date":
+        if arg == "--date":
             i += 1
             args["date"] = sys.argv[i]
+        elif arg == "--filter":
+            args["filter"] = True
         elif not arg.startswith("--"):
             args["date"] = arg
         i += 1
@@ -94,25 +65,6 @@ def workday_window(target_workday: date) -> tuple[datetime, datetime]:
     return start, end
 
 
-def coarse_utc_prefixes(target_workday: date) -> list[str]:
-    """粗筛用的 UTC 文件名日期前缀集合（工作日窗口 ± 1 天）。
-
-    工作日窗口 CST [04:00, 次日 04:00) 跨两个 UTC 日期；前后各扩 1 天
-    防时区/文件名边界漂移。精确切分由 session_in_window 兜底，粗筛只
-    要不漏（多扫几个文件代价小）。
-    """
-    start_utc = workday_window(target_workday)[0].astimezone(UTC)
-    end_utc = workday_window(target_workday)[1].astimezone(UTC)
-    first = (start_utc - timedelta(days=1)).date()
-    last = (end_utc + timedelta(days=1)).date()
-    prefixes = []
-    d = first
-    while d <= last:
-        prefixes.append(d.isoformat())
-        d += timedelta(days=1)
-    return prefixes
-
-
 def choose_target_workday(now: datetime) -> date:
     """根据 recap 时刻选择目标工作日：以 12:00 为界，<12:00 整理昨天，≥12:00 整理今天。
 
@@ -127,270 +79,55 @@ def choose_target_workday(now: datetime) -> date:
     return workday
 
 
-def _parse_utc_timestamp(ts: str) -> datetime | None:
-    """Parse a UTC timestamp string to a tz-aware datetime.
+def uuid_v7_timestamp(thread_id: str) -> datetime | None:
+    """从 UUID v7 线程 id 解析会话开始时间（tz-aware UTC datetime）。
 
-    Accepts ISO 8601 (Z or +00:00 suffix, optional milliseconds) and the
-    Pi/OMP filename format (2026-07-09T06-49-49-793Z). Returns None if the
-    string is empty or unparseable.
+    Pi/OMP 线程 id 为 UUID v7，去 pi-/omp- 前缀、去连字符后取前 12 位十六进制，
+    即会话开始时间的毫秒级 Unix 时间戳。编码的是会话开始时间（UUID 生成时刻），
+    不是 nmem 导入时间，对 t sync 导入的旧会话同样准确。无法解析返回 None。
     """
-    if not ts:
+    if not thread_id:
         return None
-    m = re.match(r"(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-\d+Z", ts)
-    if m:
-        ts = f"{m.group(1)}T{m.group(2)}:{m.group(3)}:{m.group(4)}+00:00"
+    tid = thread_id.removeprefix("pi-").removeprefix("omp-").replace("-", "")
+    if len(tid) < 12:
+        return None
     try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
+        ms = int(tid[:12], 16)
+    except ValueError:
         return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)
 
 
-def session_in_window(timestamp_utc: str, window: tuple[datetime, datetime]) -> bool:
-    """会话 timestamp 是否落在工作日窗口 [start, end) 内。
+def thread_in_window(thread_id: str, window: tuple[datetime, datetime]) -> bool:
+    """线程 id 的 UUID v7 时间戳是否落在工作日窗口 [start, end) 内。
 
-    timestamp_utc 是 session 行的 UTC 时间戳（ISO 或文件名格式）。
-    无法解析的时间戳视为不在窗口内（返回 False）。
+    无法解析的线程 id 视为不在窗口内（返回 False）。
     """
-    dt = _parse_utc_timestamp(timestamp_utc)
+    dt = uuid_v7_timestamp(thread_id)
     if dt is None:
         return False
     start, end = window
     return start <= dt < end
 
 
-def utc_to_cst(utc_ts: str) -> str:
-    """Convert a UTC timestamp to CST (UTC+8) time string HH:MM."""
-    if not utc_ts:
-        return "?"
-    try:
-        dt = datetime.fromisoformat(utc_ts.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        try:
-            # Filename format: 2026-07-09T06-49-49-793Z
-            m = re.match(r"(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-\d+Z", utc_ts)
-            if m:
-                dt_str = f"{m.group(1)}T{m.group(2)}:{m.group(3)}:{m.group(4)}+00:00"
-                dt = datetime.fromisoformat(dt_str)
-            else:
-                return "?"
-        except (ValueError, TypeError):
-            return "?"
-    cst = dt + CST_OFFSET
-    return f"{cst.hour:02d}:{cst.minute:02d} CST"
-
-
-def find_session_files(agent_dir: Path, date_prefixes: list[str]) -> list[Path]:
-    """Find session JSONL files by filename date prefix(es) (not mtime).
-
-    OMP stores each session as a <timestamp>_<uuid>/ directory holding a main
-    <timestamp>_<uuid>.jsonl plus sub-agent files (__advisor.jsonl, Verify*.jsonl,
-    ...). Only the main file's name starts with the date prefix, so sub-agent
-    files are intentionally excluded: they are auxiliary tasks that don't change
-    the session's conclusion. See references/omp-session-format.md.
-    """
-    if not agent_dir.is_dir():
-        return []
-    files = []
-    for fpath in agent_dir.rglob("*.jsonl"):
-        if any(fpath.name.startswith(p) for p in date_prefixes):
-            files.append(fpath)
-    return sorted(files)
-
-
-def project_from_cwd(cwd: str | None) -> str | None:
-    """Derive project name from session cwd (relative to home dir)."""
-    if not cwd:
-        return None
-    home = str(Path.home())
-    if cwd.startswith(home + "/"):
-        return cwd[len(home) + 1 :]
-    if cwd.startswith(home):
-        return cwd[len(home) :]
-    return cwd
-
-
-def parse_project(filepath: Path) -> str:
-    """
-    Derive a readable project name from the session directory path.
-
-    Session dirs use -- as separator: --home-cnife-code-foo-- -> code/foo
-    """
-    parts = filepath.parts
-    try:
-        idx = parts.index("sessions")
-        raw = parts[idx + 1] if idx + 1 < len(parts) else "?"
-    except ValueError:
-        return "?"
-
-    # Strip outer -- and split
-    raw = raw.strip("-")
-    # home-cnife- prefix -> drop
-    raw = raw.removeprefix("home-cnife-")
-    # mnt-c- prefix -> /mnt/c/
-    if raw.startswith("mnt-c-"):
-        return "/mnt/c/" + raw[len("mnt-c-") :]
-    # tmp-herdr-harness-* -> tmp (boot sessions)
-    if raw.startswith("tmp-herdr-harness"):
-        return "tmp"
-    # Handle relative paths like code/onereason/backend
-    raw = raw.replace("--", "/")
-    return raw
-
-
-# ── Per-session extraction ────────────────────────────────────────────────
-
-
-def _extract_text(content) -> str:
-    """Concatenate text blocks from a message content field."""
-    if isinstance(content, list):
-        return " ".join(
-            c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"
-        )
-    return content if isinstance(content, str) else ""
-
-
-def extract_session(
-    filepath: Path,
-    *,
-    agent: str,
-    title_type: str,
-    title_field: str,
-    skip_types: frozenset[str] = frozenset(),
-) -> dict:
-    """Extract session info from a Pi/OMP JSONL file (shared linear parser).
-
-    Per-format differences are parameterized:
-    - title_type / title_field: where the title lives
-      (pi: session_info.name; omp: title.title)
-    - skip_types: entry types to skip entirely (omp emits several)
-    """
-    result = {
-        "agent": agent,
-        "filepath": str(filepath),
-        "session_id": None,
-        "timestamp": None,
-        "title": None,
-        "cwd": None,
-        "msg_count": 0,
-        "first_user_msg": None,
-        "last_assistant_summary": None,
-        "error": None,
-    }
-
-    try:
-        with open(filepath) as f:
-            lines = f.readlines()
-    except (OSError, PermissionError) as e:
-        result["error"] = str(e)
-        return result
-
-    last_assistant_text = None
-    first_user_found = False
-
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        t = obj.get("type", "")
-        if t in skip_types:
-            continue
-
-        if t == "session":
-            result["session_id"] = obj.get("id")
-            result["timestamp"] = obj.get("timestamp")
-            result["cwd"] = obj.get("cwd")
-        elif t == title_type:
-            name = obj.get(title_field)
-            if name:
-                result["title"] = name
-        elif t == "message":
-            msg = obj.get("message", {})
-            role = msg.get("role", "")
-            text = _extract_text(msg.get("content", []))
-            result["msg_count"] += 1
-            if role == "user" and not first_user_found and text.strip():
-                result["first_user_msg"] = text[:300]
-                first_user_found = True
-            if role == "assistant" and text.strip():
-                last_assistant_text = text
-
-    if last_assistant_text:
-        result["last_assistant_summary"] = last_assistant_text[:500]
-
-    return result
-
-
-def extract_pi_session(filepath: Path) -> dict:
-    """Extract session info from a Pi Agent JSONL file."""
-    return extract_session(filepath, agent="pi", title_type="session_info", title_field="name")
-
-
-def extract_omp_session(filepath: Path) -> dict:
-    """Extract session info from an OMP JSONL file."""
-    return extract_session(
-        filepath, agent="omp", title_type="title", title_field="title", skip_types=OMP_SKIP_TYPES
-    )
-
-
-def collect_sessions(
-    target_workday: date,
-    pi_dir: Path,
-    omp_dir: Path,
-    *,
-    min_msgs: int = 0,
-    exclude: str | None = None,
+def filter_threads(
+    threads: list[dict], window: tuple[datetime, datetime]
 ) -> tuple[list[dict], list[dict]]:
-    """收集目标工作日窗口内的会话（粗筛多前缀 + 04:00 精确切分）。
+    """按 UUID v7 时间戳过滤 nmem 线程列表。
 
-    返回 (sessions, filtered_out)：sessions 是通过过滤的会话；filtered_out 是窗口内
-    但被 min_msgs/exclude 滤掉的会话摘要（session_id/title/msg_count/reason）。
-    total: 0 而 filtered_out 非空时是"全被过滤"，不是"当日无会话"——调用方必须
-    区分，不得据此终止。
-
-    粗筛：coarse_utc_prefixes 给出 UTC 文件名日期前缀，扫到跨 UTC 日期的
-    候选文件。精确切：读 session 行 timestamp，session_in_window 判断是否
-    落在 [工作日 04:00, 次日 04:00) CST。exclude/min_msgs 在切窗口后过滤。
+    返回 (candidates, excluded)：candidates 是窗口内线程，excluded 是窗口外。
+    无法解析 UUID v7 的线程归入 candidates（不因解析失败丢弃，交 collector 复核）。
     """
-    window = workday_window(target_workday)
-    prefixes = coarse_utc_prefixes(target_workday)
-    sessions: list[dict] = []
-    filtered_out: list[dict] = []
-
-    for dir_, extractor in ((pi_dir, extract_pi_session), (omp_dir, extract_omp_session)):
-        for fp in find_session_files(dir_, prefixes):
-            s = extractor(fp)
-            if not session_in_window(s.get("timestamp") or "", window):
-                continue
-            reason = None
-            if exclude and s["session_id"] and exclude in s["session_id"]:
-                reason = "excluded"
-            elif s["msg_count"] < min_msgs:
-                reason = "min_msgs"
-            if reason:
-                filtered_out.append(
-                    {
-                        "session_id": s["session_id"],
-                        "title": s.get("title"),
-                        "msg_count": s["msg_count"],
-                        "reason": reason,
-                    }
-                )
-                continue
-            s["time_cst"] = utc_to_cst(s.get("timestamp") or "")
-            s["project"] = project_from_cwd(s.get("cwd")) or parse_project(fp)
-            sessions.append(s)
-
-    sessions.sort(key=lambda x: x.get("timestamp") or "")
-    filtered_out.sort(key=lambda x: x.get("msg_count") or 0)
-    return sessions, filtered_out
+    candidates: list[dict] = []
+    excluded: list[dict] = []
+    for t in threads:
+        tid = t.get("id", "")
+        ts = uuid_v7_timestamp(tid)
+        if ts is None or thread_in_window(tid, window):
+            candidates.append(t)
+        else:
+            excluded.append(t)
+    return candidates, excluded
 
 
 # ── main ──────────────────────────────────────────────────────────────────
@@ -403,20 +140,20 @@ def main():
     else:
         target_workday = choose_target_workday(datetime.now(CST))
 
-    sessions, filtered_out = collect_sessions(
-        target_workday,
-        PI_SESSION_DIR,
-        OMP_SESSION_DIR,
-        min_msgs=args["min_msgs"],
-        exclude=args["exclude"],
-    )
-    output = {
-        "date": target_workday.isoformat(),
-        "total": len(sessions),
-        "filtered_out": filtered_out,
-        "total_raw": len(sessions) + len(filtered_out),
-        "sessions": sessions,
-    }
+    if args["filter"]:
+        # 从 stdin 读 nmem threads list --json 输出，按 UUID v7 窗口过滤
+        data = json.load(sys.stdin)
+        threads = data.get("threads", data) if isinstance(data, dict) else data
+        window = workday_window(target_workday)
+        candidates, excluded = filter_threads(threads, window)
+        output = {
+            "date": target_workday.isoformat(),
+            "total": len(candidates),
+            "candidates": candidates,
+            "excluded": excluded,
+        }
+    else:
+        output = {"date": target_workday.isoformat()}
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
