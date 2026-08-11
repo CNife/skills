@@ -1,29 +1,18 @@
 #!/usr/bin/env node
 /**
- * aihot-model.js — 抓取 AIHOT 单个模型在各家来源榜单的明细成绩。
- *
- * 反爬说明：aihot.virxact.com 有 EO_Bot_Ssid 反爬（curl/无头浏览器被拦，code 567），
- * 必须跑在真实浏览器会话里。本脚本为 CommonJS 模块，由 xd://browser 的 run code
- * 用 require 从磁盘加载后调用（见下方用法），无需粘贴本文件全文。
+ * aihot-model.js - 抓取 AIHOT 单个模型在各家来源榜单的明细成绩。
  *
  * 数据来源页：/leaderboard/<slug>（slug 见总榜每行的 a.lb-row href，如 claude-opus-5）
  * 页面头部：.lb-detail-overall（共识分 strong、当前名次 b）
- * 每行 DOM：.lb-score-list-row → .lb-score-list-source（榜单名 strong + 运营方 small）、
+ * 每行 DOM：.lb-score-list-row -> .lb-score-list-source（榜单名 strong + 运营方 small）、
  *   .lb-score-list-rank、.lb-score-list-value、.lb-score-list-model、.lb-score-list-link
- *   缺评行带 is-missing class（"— 暂无评估"）
- *
- * 用法（xd://browser run 的 code 字段执行，name=main）：
- *   <SCRIPTS_DIR> = 本技能 scripts 目录（= SKILL.md 所在目录下的 scripts/；
- *   用 read skill://aihot-leaderboard 或搜索 aihot-leaderboard/SKILL.md 定位，勿预设安装目录）
- *   const file = '<SCRIPTS_DIR>/aihot-model.js';
- *   delete require.cache[require.resolve(file)];
- *   const { extractModel } = require(file);
- *   return extractModel(page, { slug: 'claude-opus-5' });
+ *   缺评行带 is-missing class（"- 暂无评估"）
  *
  * 返回：{ output, slug, score, rank, rows }，rows 为该模型在全部来源条目的明细；
  *   同时写入 JSON 文件（options.output 可覆盖，默认 /tmp/aihot-model-<slug>.json）。
  *
  * 依赖：无（仅用浏览器页面上下文原生 API + Node 内置 fs）。
+ * 用法与反爬见 SKILL.md。
  */
 'use strict';
 
