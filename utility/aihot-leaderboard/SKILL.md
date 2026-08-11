@@ -31,13 +31,48 @@ description: 查询 AIHOT 大模型排行榜（aihot.virxact.com/leaderboard）�
 用户问单个模型时，先用总榜页把模型名映射到 slug：
 
 1. 用 `xd://browser` 打开 `https://aihot.virxact.com/leaderboard`（已打开则复用 tab）。
-2. `scripts/aihot-leaderboard.js` 的输出里每行含 `url`（如 `/leaderboard/claude-opus-5`），取末段即 slug；模型名可能在总榜里没有（30 名以外），此时按用户给的模型名从 URL 猜测（小写、连字符），抓不到就在回答中说明该模型不在总榜 30 名内。
+2. 运行下面的**总榜驱动代码**，返回的 `rows` 里每行含 `url`（如 `/leaderboard/claude-opus-5`），取末段即 slug；模型名可能在总榜里没有（30 名以外），此时按用户给的模型名从 URL 猜测（小写、连字符），抓不到就在回答中说明该模型不在总榜 30 名内。
 
-### Step 1：抓取
+### Step 1：抓取（驱动代码，不粘贴脚本全文）
 
-把对应脚本**完整内容**粘贴进 `xd://browser`（`action: run`，`name: main`）的 `code` 字段执行。脚本内改两个常量：`SLUG`（模型明细层）或 `OUTPUT`（输出路径，默认 `/tmp/aihot-*.json`，一般不用改）。
+脚本是 CommonJS 模块，从磁盘加载；把**对应数据层**的驱动代码粘贴进 `xd://browser`（`action: run`，`name: main`）的 `code` 字段执行即可。脚本自带导航：当前 tab 已在目标页则直接抓取，否则自动跳转。
 
-脚本使用页面上下文原生 API（同源 fetch / DOM），无外部依赖；结果写入 JSON 文件。
+**总榜层**（返回含 30 行 `rows`，每行带 `url` 可作 slug 来源）：
+
+```js
+const path = require('path'), os = require('os');
+const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
+const file = path.join(dir, 'aihot-leaderboard.js');
+delete require.cache[require.resolve(file)];
+const { extractLeaderboard } = require(file);
+return extractLeaderboard(page);
+```
+
+**模型明细层**（把 slug 换成目标模型的 slug，见 Step 0）：
+
+```js
+const path = require('path'), os = require('os');
+const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
+const file = path.join(dir, 'aihot-model.js');
+delete require.cache[require.resolve(file)];
+const { extractModel } = require(file);
+return extractModel(page, { slug: 'claude-opus-5' });
+```
+
+**来源榜单层**（数据量大，返回仅各榜行数摘要；完整 JSON 在返回的 `output` 指出的文件里，用 read 读取）：
+
+```js
+const path = require('path'), os = require('os');
+const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
+const file = path.join(dir, 'aihot-sources.js');
+delete require.cache[require.resolve(file)];
+const { extractSources } = require(file);
+return extractSources(page);
+```
+
+- 若 `require` 报错（技能未安装到 `~/.agents/skills/`），把 `dir` 换成仓库路径 `/home/cnife/personal_code/skills/utility/aihot-leaderboard/scripts`。
+- `delete require.cache[...]` 确保加载最新版脚本（技能更新后立即生效），保留此行不要删。
+- 总榜/模型明细的 `rows` 直接出现在工具返回里；来源榜单的完整数据在 `output` 指出的 JSON 文件。
 
 ### Step 2：呈现
 
@@ -54,4 +89,4 @@ description: 查询 AIHOT 大模型排行榜（aihot.virxact.com/leaderboard）�
 
 - **价格字段差异**：总榜多数模型有 `price.input` / `price.output`（美元/百万 tokens）；订阅制模型（如 Qwen3.8 Max）无按量价，脚本里落在 `price.note`（如 `$6/月起`）。
 - **运行时机**：站点一天只更新一次，重复抓取结果不变；回答即可，无需缓存或历史对比。
-- 脚本失败时（tab 被关闭、导航失败）重新 `xd://browser open` 后再粘贴执行；不要用 curl / fetch 直连代替，必被反爬拦截。
+- 脚本失败时（tab 被关闭、导航失败）重新 `xd://browser open` 后再执行对应驱动代码；不要用 curl / fetch 直连代替，必被反爬拦截。

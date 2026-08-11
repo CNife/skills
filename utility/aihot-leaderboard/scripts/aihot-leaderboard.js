@@ -3,23 +3,37 @@
  * aihot-leaderboard.js — 抓取 AIHOT 大模型排行榜总榜（前 30 名）。
  *
  * 反爬说明：aihot.virxact.com 有 EO_Bot_Ssid 反爬（curl/无头浏览器被拦，code 567），
- * 必须跑在真实浏览器会话里。本脚本设计为粘贴进 omp 的 xd://browser（action=run,
- * name=main）的 code 字段执行，页面上下文里同源 fetch / DOM 可用。
+ * 必须跑在真实浏览器会话里。本脚本为 CommonJS 模块，由 xd://browser 的 run code
+ * 用 require 从磁盘加载后调用（见下方用法），无需粘贴本文件全文。
  *
  * 数据来源页：/leaderboard
  * 每行 DOM：`a.lb-row`，叶子节点文本依次为：
  *   排名 / 模型 / 厂商 / "上线" / 日期 / "评测" / 完整度% / "输入" / $ / "输出" / $ / 共识分
  *   （订阅制模型如 Qwen3.8 Max 无输入/输出价，为 "$6/月起"）
- * 输出：JSON 写入 /tmp/aihot-leaderboard.json（可改 OUTPUT）。
  *
- * 用法：
- *   1. xd://browser open https://aihot.virxact.com/leaderboard
- *   2. 把本文件内容粘贴到 xd://browser run 的 code 字段执行
- *   3. 结果在 /tmp/aihot-leaderboard.json
+ * 用法（xd://browser run 的 code 字段执行，name=main）：
+ *   const path = require('path'), os = require('os');
+ *   const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
+ *   const file = path.join(dir, 'aihot-leaderboard.js');
+ *   delete require.cache[require.resolve(file)];
+ *   const { extractLeaderboard } = require(file);
+ *   return extractLeaderboard(page);
+ *
+ * 返回：{ output, count, first, rows }，rows 为 30 行完整数据（含每行 url，可作
+ *   aihot-model.js 的 slug 来源）；同时写入 JSON 文件（options.output 可覆盖，默认
+ *   /tmp/aihot-leaderboard.json）。
+ *
+ * 依赖：无（仅用浏览器页面上下文原生 API + Node 内置 fs）。
  */
-const OUTPUT = '/tmp/aihot-leaderboard.json';
+'use strict';
 
-async function main() {
+const fs = require('fs');
+
+const DEFAULT_OUTPUT = '/tmp/aihot-leaderboard.json';
+
+async function extractLeaderboard(page, options = {}) {
+  const output = options.output || DEFAULT_OUTPUT;
+
   // 总榜页 URL 以 /leaderboard 结尾；methodology/详情页含额外路径段，需重新跳转
   const isBoardPage = /\/leaderboard$/.test(page.url());
   if (!isBoardPage) {
@@ -57,9 +71,8 @@ async function main() {
     });
   });
 
-  const fs = require('fs');
-  fs.writeFileSync(OUTPUT, JSON.stringify(rows, null, 2));
-  return JSON.stringify({ output: OUTPUT, count: rows.length, first: rows[0] });
+  fs.writeFileSync(output, JSON.stringify(rows, null, 2));
+  return { output, count: rows.length, first: rows[0], rows };
 }
 
-return main();
+module.exports = { extractLeaderboard };
