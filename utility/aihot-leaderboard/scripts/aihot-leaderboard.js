@@ -12,9 +12,9 @@
  *   （订阅制模型如 Qwen3.8 Max 无输入/输出价，为 "$6/月起"）
  *
  * 用法（xd://browser run 的 code 字段执行，name=main）：
- *   const path = require('path'), os = require('os');
- *   const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
- *   const file = path.join(dir, 'aihot-leaderboard.js');
+ *   <SCRIPTS_DIR> = 本技能 scripts 目录（= SKILL.md 所在目录下的 scripts/；
+ *   用 read skill://aihot-leaderboard 或搜索 aihot-leaderboard/SKILL.md 定位，勿预设安装目录）
+ *   const file = '<SCRIPTS_DIR>/aihot-leaderboard.js';
  *   delete require.cache[require.resolve(file)];
  *   const { extractLeaderboard } = require(file);
  *   return extractLeaderboard(page);
