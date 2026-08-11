@@ -1,27 +1,16 @@
 #!/usr/bin/env node
 /**
- * aihot-sources.js — 抓取 AIHOT 全部来源官方榜单（12 张评测榜单，10 家独立来源）。
- *
- * 反爬说明：aihot.virxact.com 有 EO_Bot_Ssid 反爬（curl/无头浏览器被拦，code 567），
- * 必须跑在真实浏览器会话里。本脚本为 CommonJS 模块，由 xd://browser 的 run code
- * 用 require 从磁盘加载后调用（见下方用法），无需粘贴本文件全文。
+ * aihot-sources.js - 抓取 AIHOT 全部来源官方榜单（12 张评测榜单，10 家独立来源）。
  *
  * 数据来源页：/leaderboard/methodology
  * 交互：左侧 `.lb-source-nav button` 点击切换来源；部分来源有 `.lb-source-signal-tabs`
  *       子 tab（如 llm2014 Agent / llm2014 推理）。SPA 切换，URL 不变。
  *
- * 用法（xd://browser run 的 code 字段执行，name=main）：
- *   <SCRIPTS_DIR> = 本技能 scripts 目录（= SKILL.md 所在目录下的 scripts/；
- *   用 read skill://aihot-leaderboard 或搜索 aihot-leaderboard/SKILL.md 定位，勿预设安装目录）
- *   const file = '<SCRIPTS_DIR>/aihot-sources.js';
- *   delete require.cache[require.resolve(file)];
- *   const { extractSources } = require(file);
- *   return extractSources(page);
- *
  * 返回：{ output, counts }（数据量大，rows 不内联）；完整 JSON 写入 options.output
  *   指定文件（默认 /tmp/aihot-sources.json），用 read 读取。
  *
  * 依赖：无（仅用浏览器页面上下文原生 API + Node 内置 fs）。
+ * 用法与反爬见 SKILL.md。
  */
 'use strict';
 

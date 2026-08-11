@@ -1,29 +1,18 @@
 #!/usr/bin/env node
 /**
- * aihot-leaderboard.js — 抓取 AIHOT 大模型排行榜总榜（前 30 名）。
- *
- * 反爬说明：aihot.virxact.com 有 EO_Bot_Ssid 反爬（curl/无头浏览器被拦，code 567），
- * 必须跑在真实浏览器会话里。本脚本为 CommonJS 模块，由 xd://browser 的 run code
- * 用 require 从磁盘加载后调用（见下方用法），无需粘贴本文件全文。
+ * aihot-leaderboard.js - 抓取 AIHOT 大模型排行榜总榜（前 30 名）。
  *
  * 数据来源页：/leaderboard
  * 每行 DOM：`a.lb-row`，叶子节点文本依次为：
  *   排名 / 模型 / 厂商 / "上线" / 日期 / "评测" / 完整度% / "输入" / $ / "输出" / $ / 共识分
  *   （订阅制模型如 Qwen3.8 Max 无输入/输出价，为 "$6/月起"）
  *
- * 用法（xd://browser run 的 code 字段执行，name=main）：
- *   <SCRIPTS_DIR> = 本技能 scripts 目录（= SKILL.md 所在目录下的 scripts/；
- *   用 read skill://aihot-leaderboard 或搜索 aihot-leaderboard/SKILL.md 定位，勿预设安装目录）
- *   const file = '<SCRIPTS_DIR>/aihot-leaderboard.js';
- *   delete require.cache[require.resolve(file)];
- *   const { extractLeaderboard } = require(file);
- *   return extractLeaderboard(page);
- *
  * 返回：{ output, count, first, rows }，rows 为 30 行完整数据（含每行 url，可作
  *   aihot-model.js 的 slug 来源）；同时写入 JSON 文件（options.output 可覆盖，默认
  *   /tmp/aihot-leaderboard.json）。
  *
  * 依赖：无（仅用浏览器页面上下文原生 API + Node 内置 fs）。
+ * 用法与反爬见 SKILL.md。
  */
 'use strict';
 
