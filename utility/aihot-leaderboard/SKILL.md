@@ -1,6 +1,7 @@
 ---
 name: aihot-leaderboard
-description: 查询 AIHOT 大模型排行榜（aihot.virxact.com/leaderboard）实时数据：总榜、单模型各榜明细、来源榜单全量。用户问大模型排名/榜首、某模型共识分与名次、某评测榜成绩、或对比多家榜单时触发。数据一律经 xd://browser 实时抓取，不以训练记忆作答。
+description: 查询 AIHOT 大模型排行榜（aihot.virxact.com/leaderboard）实时数据：总榜、单模型各榜明细、来源榜单全量。手动触发，仅在用户明确要求查询 AIHOT 排行数据时使用；数据一律经 xd://browser 实时抓取，不以训练记忆作答。
+disable-model-invocation: true
 ---
 
 # AIHOT Leaderboard
@@ -14,7 +15,7 @@ description: 查询 AIHOT 大模型排行榜（aihot.virxact.com/leaderboard）�
 - **许可**：数据限个人/内部使用，外部商业用途须先取得 AIHOT 授权。
 - 榜单每天约 08:17（北京时间）更新一次；抓取到的即当前快照，回答时说明数据时间（页面「更新于」）。
 
-## 数据层与触发路由
+## 数据层与路由选择
 
 | 用户意图 | 数据层 | 来源页 | 脚本 |
 |---|---|---|---|
