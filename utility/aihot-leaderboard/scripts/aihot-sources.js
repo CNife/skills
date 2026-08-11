@@ -11,9 +11,9 @@
  *       子 tab（如 llm2014 Agent / llm2014 推理）。SPA 切换，URL 不变。
  *
  * 用法（xd://browser run 的 code 字段执行，name=main）：
- *   const path = require('path'), os = require('os');
- *   const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
- *   const file = path.join(dir, 'aihot-sources.js');
+ *   <SCRIPTS_DIR> = 本技能 scripts 目录（= SKILL.md 所在目录下的 scripts/；
+ *   用 read skill://aihot-leaderboard 或搜索 aihot-leaderboard/SKILL.md 定位，勿预设安装目录）
+ *   const file = '<SCRIPTS_DIR>/aihot-sources.js';
  *   delete require.cache[require.resolve(file)];
  *   const { extractSources } = require(file);
  *   return extractSources(page);

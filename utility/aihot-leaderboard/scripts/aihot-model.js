@@ -13,9 +13,9 @@
  *   缺评行带 is-missing class（"— 暂无评估"）
  *
  * 用法（xd://browser run 的 code 字段执行，name=main）：
- *   const path = require('path'), os = require('os');
- *   const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
- *   const file = path.join(dir, 'aihot-model.js');
+ *   <SCRIPTS_DIR> = 本技能 scripts 目录（= SKILL.md 所在目录下的 scripts/；
+ *   用 read skill://aihot-leaderboard 或搜索 aihot-leaderboard/SKILL.md 定位，勿预设安装目录）
+ *   const file = '<SCRIPTS_DIR>/aihot-model.js';
  *   delete require.cache[require.resolve(file)];
  *   const { extractModel } = require(file);
  *   return extractModel(page, { slug: 'claude-opus-5' });
