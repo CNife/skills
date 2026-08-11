@@ -3,28 +3,42 @@
  * aihot-model.js — 抓取 AIHOT 单个模型在各家来源榜单的明细成绩。
  *
  * 反爬说明：aihot.virxact.com 有 EO_Bot_Ssid 反爬（curl/无头浏览器被拦，code 567），
- * 必须跑在真实浏览器会话里。本脚本设计为粘贴进 omp 的 xd://browser（action=run,
- * name=main）的 code 字段执行，页面上下文里同源 fetch / DOM 可用。
+ * 必须跑在真实浏览器会话里。本脚本为 CommonJS 模块，由 xd://browser 的 run code
+ * 用 require 从磁盘加载后调用（见下方用法），无需粘贴本文件全文。
  *
  * 数据来源页：/leaderboard/<slug>（slug 见总榜每行的 a.lb-row href，如 claude-opus-5）
  * 页面头部：.lb-detail-overall（共识分 strong、当前名次 b）
  * 每行 DOM：.lb-score-list-row → .lb-score-list-source（榜单名 strong + 运营方 small）、
  *   .lb-score-list-rank、.lb-score-list-value、.lb-score-list-model、.lb-score-list-link
  *   缺评行带 is-missing class（"— 暂无评估"）
- * 输出：JSON 写入 /tmp/aihot-model-<slug>.json（可改 OUTPUT）。
  *
- * 用法（改 slug 后粘贴）：
- *   1. xd://browser open https://aihot.virxact.com/leaderboard
- *   2. 把本文件内容粘贴到 xd://browser run 的 code 字段执行
- *   3. 结果在 /tmp/aihot-model-<slug>.json
+ * 用法（xd://browser run 的 code 字段执行，name=main）：
+ *   const path = require('path'), os = require('os');
+ *   const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
+ *   const file = path.join(dir, 'aihot-model.js');
+ *   delete require.cache[require.resolve(file)];
+ *   const { extractModel } = require(file);
+ *   return extractModel(page, { slug: 'claude-opus-5' });
+ *
+ * 返回：{ output, slug, score, rank, rows }，rows 为该模型在全部来源条目的明细；
+ *   同时写入 JSON 文件（options.output 可覆盖，默认 /tmp/aihot-model-<slug>.json）。
+ *
+ * 依赖：无（仅用浏览器页面上下文原生 API + Node 内置 fs）。
  */
-const SLUG = 'claude-opus-5'; // ← 改成目标模型的 slug（总榜 a.lb-row 的 href 末段）
-const OUTPUT = `/tmp/aihot-model-${SLUG}.json`;
+'use strict';
 
-async function main() {
-  const url = `https://aihot.virxact.com/leaderboard/${SLUG}`;
+const fs = require('fs');
+
+async function extractModel(page, options = {}) {
+  const slug = options.slug;
+  if (!slug) {
+    throw new Error('extractModel 需要 options.slug（总榜 a.lb-row href 末段，如 claude-opus-5）');
+  }
+  const output = options.output || `/tmp/aihot-model-${slug}.json`;
+  const url = `https://aihot.virxact.com/leaderboard/${slug}`;
+
   // 精确匹配：/leaderboard/<slug> 结尾；methodology/总榜页需重新跳转
-  const isModelPage = new RegExp(`/leaderboard/${SLUG}$`).test(page.url());
+  const isModelPage = new RegExp(`/leaderboard/${slug}$`).test(page.url());
   if (!isModelPage) {
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
   }
@@ -63,9 +77,14 @@ async function main() {
     return out;
   });
 
-  const fs = require('fs');
-  fs.writeFileSync(OUTPUT, JSON.stringify(data, null, 2));
-  return JSON.stringify({ output: OUTPUT, slug: SLUG, score: data.score, rank: data.rank, rows: data.rows.length });
+  fs.writeFileSync(output, JSON.stringify(data, null, 2));
+  return {
+    output,
+    slug,
+    score: data.score,
+    rank: data.rank,
+    rows: data.rows,
+  };
 }
 
-return main();
+module.exports = { extractModel };

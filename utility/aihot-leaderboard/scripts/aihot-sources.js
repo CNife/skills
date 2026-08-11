@@ -3,22 +3,31 @@
  * aihot-sources.js — 抓取 AIHOT 全部来源官方榜单（12 张评测榜单，10 家独立来源）。
  *
  * 反爬说明：aihot.virxact.com 有 EO_Bot_Ssid 反爬（curl/无头浏览器被拦，code 567），
- * 必须跑在真实浏览器会话里。本脚本设计为粘贴进 omp 的 xd://browser（action=run,
- * name=main）的 code 字段执行，页面上下文里同源 fetch / DOM 可用。
+ * 必须跑在真实浏览器会话里。本脚本为 CommonJS 模块，由 xd://browser 的 run code
+ * 用 require 从磁盘加载后调用（见下方用法），无需粘贴本文件全文。
  *
  * 数据来源页：/leaderboard/methodology
  * 交互：左侧 `.lb-source-nav button` 点击切换来源；部分来源有 `.lb-source-signal-tabs`
  *       子 tab（如 llm2014 Agent / llm2014 推理）。SPA 切换，URL 不变。
- * 输出：JSON 写入 /tmp/aihot-sources.json（文件路径可改 OUTPUT）。
  *
- * 用法：
- *   1. xd://browser open https://aihot.virxact.com/leaderboard
- *   2. 把本文件内容粘贴到 xd://browser run 的 code 字段执行
- *   3. 结果在 /tmp/aihot-sources.json
+ * 用法（xd://browser run 的 code 字段执行，name=main）：
+ *   const path = require('path'), os = require('os');
+ *   const dir = path.join(os.homedir(), '.agents/skills/aihot-leaderboard/scripts');
+ *   const file = path.join(dir, 'aihot-sources.js');
+ *   delete require.cache[require.resolve(file)];
+ *   const { extractSources } = require(file);
+ *   return extractSources(page);
  *
- * 依赖：无（仅用浏览器页面上下文原生 API）。
+ * 返回：{ output, counts }（数据量大，rows 不内联）；完整 JSON 写入 options.output
+ *   指定文件（默认 /tmp/aihot-sources.json），用 read 读取。
+ *
+ * 依赖：无（仅用浏览器页面上下文原生 API + Node 内置 fs）。
  */
-const OUTPUT = '/tmp/aihot-sources.json';
+'use strict';
+
+const fs = require('fs');
+
+const DEFAULT_OUTPUT = '/tmp/aihot-sources.json';
 
 // 来源按钮文本 → 规范名。按钮 innerText 可能带说明文字，用 startsWith 匹配。
 // 顺序即点击顺序；同一运营方的多张榜单在组内平分权重（服务端计算，这里只取数据）。
@@ -35,7 +44,9 @@ const SOURCES = [
   'llm2014',
 ];
 
-async function main() {
+async function extractSources(page, options = {}) {
+  const output = options.output || DEFAULT_OUTPUT;
+
   // 精确匹配：methodology 页 URL 以 /leaderboard/methodology 结尾
   if (!/\/leaderboard\/methodology$/.test(page.url())) {
     await page.goto('https://aihot.virxact.com/leaderboard/methodology', {
@@ -88,13 +99,14 @@ async function main() {
     }
   }
 
-  const fs = require('fs');
-  fs.writeFileSync(OUTPUT, JSON.stringify(all, null, 2));
+  fs.writeFileSync(output, JSON.stringify(all, null, 2));
   const counts = {};
   for (const [k, v] of Object.entries(all)) {
-    counts[k] = Array.isArray(v) ? v.length : Object.fromEntries(Object.entries(v).map(([s, rows]) => [s, rows.length]));
+    counts[k] = Array.isArray(v)
+      ? v.length
+      : Object.fromEntries(Object.entries(v).map(([s, rows]) => [s, rows.length]));
   }
-  return JSON.stringify({ output: OUTPUT, counts });
+  return { output, counts };
 }
 
 async function extractCurrentTable(page) {
@@ -117,4 +129,4 @@ async function extractCurrentTable(page) {
   });
 }
 
-return main();
+module.exports = { extractSources };
