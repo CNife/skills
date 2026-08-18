@@ -13,6 +13,9 @@ utility/             通用工具（与代理无关）
 ├── models-dev-query/    AI 模型规格查询
 └── plain-speak/         对话中冒出自造黑话时去掉、用平实的话重新解释
 
+methodology/         方法论（组合并强化 agent 工作方式的技能）
+└── grill-for-unknowns/  用拷问的方式对齐未知
+
 .archive/            不再维护的历史技能
 ```
 
@@ -44,6 +47,12 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
 | [aihot-leaderboard](./utility/aihot-leaderboard) | 查询 AIHOT 大模型排行榜 - 总榜前 30、单模型各榜明细、12 张来源榜单全量排名与分数 |
 | [plain-speak](./utility/plain-speak) | 对话中 AI 冒出自造黑话、用户跟不上时调用--把自造词去掉，用平实的话重新解释一遍 |
+
+### methodology/
+
+| Skill | 描述 |
+|-------|------|
+| [grill-for-unknowns](./methodology/grill-for-unknowns) | 用户主动调用的 `grill-with-docs` 强化版：核对领土，用四类未知事项探索战争迷雾，并按需调用 `prototype` 或 `research` |
 
 ## 开发
 
