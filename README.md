@@ -13,6 +13,9 @@ utility/             通用工具（与代理无关）
 ├── models-dev-query/    AI 模型规格查询
 └── plain-speak/         对话中冒出自造黑话时去掉、用平实的话重新解释
 
+thinking/            思维方法（驱动代理的对话/决策流程）
+└── grill-for-unknowns/  有据盘问：取证后一次一问，挖出地图与领土之间被迷雾遮住的未知数
+
 .archive/            不再维护的历史技能
 ```
 
@@ -44,6 +47,12 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
 | [aihot-leaderboard](./utility/aihot-leaderboard) | 查询 AIHOT 大模型排行榜 - 总榜前 30、单模型各榜明细、12 张来源榜单全量排名与分数 |
 | [plain-speak](./utility/plain-speak) | 对话中 AI 冒出自造黑话、用户跟不上时调用--把自造词去掉，用平实的话重新解释一遍 |
+
+### thinking/
+
+| Skill | 描述 |
+|-------|------|
+| [grill-for-unknowns](./thinking/grill-for-unknowns) | 对计划、决策或想法做压力测试：先取证再盘问，一次一个实质性问题，直到达成共享理解；术语全中文化 |
 
 ## 开发
 
