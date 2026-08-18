@@ -13,8 +13,8 @@ utility/             通用工具（与代理无关）
 ├── models-dev-query/    AI 模型规格查询
 └── plain-speak/         对话中冒出自造黑话时去掉、用平实的话重新解释
 
-methodology/         方法论（驱动代理做计划/审查的流程）
-└── grill-for-unknowns/  有据盘问：先取证再盘问，一次一个实质性问题，发现未知数并形成共享理解
+methodology/         方法论（组合并强化 agent 工作方式的技能）
+└── grill-for-unknowns/  用拷问的方式对齐未知
 
 .archive/            不再维护的历史技能
 ```
@@ -52,7 +52,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 
 | Skill | 描述 |
 |-------|------|
-| [grill-for-unknowns](./methodology/grill-for-unknowns) | 有据盘问：先查文档/源码/测试取证，再一次一个实质性问题地盘问计划、规格或 PR，直到发现会改变实现的未知数并形成共享理解 |
+| [grill-for-unknowns](./methodology/grill-for-unknowns) | 用户主动调用的 `grill-with-docs` 强化版：核对领土，用四类未知事项探索战争迷雾，并按需调用 `prototype` 或 `research` |
 
 ## 开发
 
