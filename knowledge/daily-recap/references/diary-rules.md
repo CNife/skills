@@ -31,9 +31,7 @@
 
 ## 模板内容
 
-新日记文件由 `obsidian-helper.py` 从配置的模板复制（见 `~/.config/cnife-skills/obsidian-diary.json` 的 `vaults.<variant>.template`，默认 work 用 `{日记目录}/日志模板.md`、personal 用 `{日记目录}/日记模板.md`）。
-
-**模板内容的唯一真相源是模板文件本身**：待办事项块等内容直接读模板文件，禁止在本文档或 agent 记忆中复述模板内容。模板文件缺失时脚本报错退出，不静默降级为手写。
+新日记文件从模板复制，内容以模板文件为准，此处不复述。
 
 ---
 
