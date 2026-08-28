@@ -47,6 +47,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
 | [aihot-leaderboard](./utility/aihot-leaderboard) | 查询 AIHOT 大模型排行榜 - 总榜前 30、单模型各榜明细、12 张来源榜单全量排名与分数 |
 | [plain-speak](./utility/plain-speak) | 对话中 AI 冒出自造黑话、用户跟不上时调用--把自造词去掉，用平实的话重新解释一遍 |
+| [treehouse](./utility/treehouse) | 教 Agent 使用 Treehouse CLI 获取、租用和归还 worktree |
 
 ### methodology/
 
