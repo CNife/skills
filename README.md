@@ -32,8 +32,6 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 
 ## 可用 Skills
 
-> pi-agent 分类的 6 个技能已于 2026-08-02 迁入 [CNife/pi-extensions](https://github.com/CNife/pi-extensions) 的 `personal/skills/`，随 pi git 包分发；本仓库不再维护。
-
 ### knowledge/
 
 | Skill | 描述 |
