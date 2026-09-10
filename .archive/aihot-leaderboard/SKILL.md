@@ -2,6 +2,8 @@
 name: aihot-leaderboard
 description: 查询 AIHOT 大模型排行榜（aihot.virxact.com/leaderboard）实时数据：总榜、单模型各榜明细、来源榜单全量。手动触发，仅在用户明确要求查询 AIHOT 排行数据时使用；数据一律经 xd://browser 实时抓取，不以训练记忆作答。
 disable-model-invocation: true
+metadata:
+  internal: true
 ---
 
 # AIHOT Leaderboard
