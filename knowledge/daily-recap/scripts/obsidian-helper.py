@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.14"
 # dependencies = []
 # ///
 """Obsidian 日记上下文输出脚本。
 
 用法:
-    uv run obsidian-helper.py --vault work
+    uv run --script scripts/obsidian-helper.py --vault work
 """
 
 import argparse
@@ -14,10 +14,12 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 CONFIG_PATH = Path.home() / ".config" / "cnife-skills" / "obsidian-diary.json"
+CST = ZoneInfo("Asia/Shanghai")
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
 
@@ -68,22 +70,22 @@ def _load_vaults() -> dict[str, dict]:
     return vaults
 
 
-def compute_paths(vault_cfg: dict, date: datetime | None = None) -> dict:
-    date = date or datetime.now()
-    month_dir = f"{vault_cfg['base']}/{vault_cfg['diary_dir']}/{date.year}/{date.month:02d}"
-    filename = f"{date.year}年{date.month}月{date.day}日{WEEKDAYS[date.weekday()]}.md"
+def compute_paths(vault_cfg: dict, day: date | None = None) -> dict:
+    day = day or datetime.now(tz=CST).date()
+    month_dir = f"{vault_cfg['base']}/{vault_cfg['diary_dir']}/{day.year}/{day.month:02d}"
+    filename = f"{day.year}年{day.month}月{day.day}日{WEEKDAYS[day.weekday()]}.md"
     return {
         "diary_path": f"{month_dir}/{filename}",
         "month_dir": month_dir,
         "template_path": f"{vault_cfg['base']}/{vault_cfg['diary_dir']}/{vault_cfg['template']}",
-        "date": date.isoformat(),
+        "date": day.isoformat(),
     }
 
 
 def _scan_recent(cfg: dict, days: int = 10, limit: int = 3) -> list[tuple]:
     base = cfg["base"]
     diary_base = f"{base}/{cfg['diary_dir']}"
-    cutoff = datetime.now() - timedelta(days=days)
+    cutoff = datetime.now(tz=CST) - timedelta(days=days)
     exclude = cfg.get("exclude_meta", set())
 
     results = []
@@ -94,7 +96,7 @@ def _scan_recent(cfg: dict, days: int = 10, limit: int = 3) -> list[tuple]:
             if fname.endswith("模板.md") or fname in exclude:
                 continue
             fpath = os.path.join(root, fname)
-            mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
+            mtime = datetime.fromtimestamp(os.path.getmtime(fpath), tz=CST)
             if mtime >= cutoff:
                 results.append((mtime, fpath))
 
@@ -104,9 +106,7 @@ def _scan_recent(cfg: dict, days: int = 10, limit: int = 3) -> list[tuple]:
 
 def main():
     parser = argparse.ArgumentParser(description="Obsidian 日记上下文输出")
-    parser.add_argument(
-        "--vault", required=True, help="目标 vault（取决于配置文件中定义的 vault 名称）"
-    )
+    parser.add_argument("--vault", required=True, help="目标 vault（取决于配置文件中定义的 vault 名称）")
     parser.add_argument("--date", help="目标工作日 YYYY-MM-DD（默认今天，用于跨天补整理）")
     args = parser.parse_args()
 
@@ -117,8 +117,8 @@ def main():
         sys.exit(1)
 
     cfg = vaults[args.vault]
-    date = datetime.strptime(args.date, "%Y-%m-%d") if args.date else None
-    paths = compute_paths(cfg, date=date)
+    day = date.fromisoformat(args.date) if args.date else None
+    paths = compute_paths(cfg, day=day)
     today = paths["diary_path"]
     exists = os.path.exists(today)
 

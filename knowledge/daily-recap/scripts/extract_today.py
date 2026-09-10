@@ -1,6 +1,6 @@
 #!/usr/bin/env uv run
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.14"
 # ///
 """
 extract_today.py - 确定目标工作日，并可按 UUID v7 时间窗口过滤 nmem 线程。
@@ -39,15 +39,9 @@ CST = ZoneInfo("Asia/Shanghai")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="确定目标工作日，并可按 UUID v7 时间窗口过滤 nmem 线程。"
-    )
-    parser.add_argument(
-        "date", nargs="?", default=None, help="目标工作日 YYYY-MM-DD（默认自动选择）"
-    )
-    parser.add_argument(
-        "--date", dest="date_opt", default=None, help="同位置参数，显式指定目标工作日"
-    )
+    parser = argparse.ArgumentParser(description="确定目标工作日，并可按 UUID v7 时间窗口过滤 nmem 线程。")
+    parser.add_argument("date", nargs="?", default=None, help="目标工作日 YYYY-MM-DD（默认自动选择）")
+    parser.add_argument("--date", dest="date_opt", default=None, help="同位置参数，显式指定目标工作日")
     parser.add_argument("--filter", action="store_true", help="从 stdin 读 nmem JSON 按窗口过滤")
     args = parser.parse_args()
     args.date = args.date_opt or args.date
@@ -59,9 +53,7 @@ def workday_window(target_workday: date) -> tuple[datetime, datetime]:
 
     工作日以 CST 04:00 为分界：凌晨 00:00-04:00 的会话归前一工作日。
     """
-    start = datetime(
-        target_workday.year, target_workday.month, target_workday.day, 4, 0, tzinfo=CST
-    )
+    start = datetime(target_workday.year, target_workday.month, target_workday.day, 4, 0, tzinfo=CST)
     end = start + timedelta(days=1)
     return start, end
 
@@ -111,9 +103,7 @@ def thread_in_window(thread_id: str, window: tuple[datetime, datetime]) -> bool:
     return start <= dt < end
 
 
-def filter_threads(
-    threads: list[dict], window: tuple[datetime, datetime]
-) -> tuple[list[dict], list[dict]]:
+def filter_threads(threads: list[dict], window: tuple[datetime, datetime]) -> tuple[list[dict], list[dict]]:
     """按 UUID v7 时间戳过滤 nmem 线程列表。
 
     返回 (candidates, excluded)：candidates 是窗口内线程，excluded 是窗口外。

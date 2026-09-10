@@ -1,0 +1,47 @@
+# CNife/skills 的 ruff 基线（需要 ruff >= 0.16）
+#
+# 规则集 = ruff 0.16 默认集（413 条）+ RUF 全族，即「跟随最新 ruff 标准」：
+# 不写 select，避免手写维护一份清单；代价是 ruff minor 升级可能带来新告警。
+# 参考 https://docs.astral.sh/ruff/default-rules/
+
+line-length = 120
+
+# 与各脚本 PEP 723 的 requires-python = ">=3.14" 一致。target-version 高于脚本
+# 实际支持的版本时，pyupgrade 类改写会产出旧解释器无法解析的语法。
+target-version = "py314"
+
+# .archive/ 是已冻结的历史技能，不参与 lint / format。
+# 用 extend-exclude（而非 exclude）：后者会整体替换 ruff 内置的排除表。
+extend-exclude = [".archive"]
+
+[lint]
+# 默认集已含 I/UP/B/C4/SIM 等族，但 RUF001/002/003（歧义 Unicode 字符）不在其中；
+# extend-select 在默认集之上追加，select 则会整体替换默认集。
+extend-select = ["RUF"]
+
+# 中文注释、docstring、help 文本大量使用全角标点：不列白名单时全仓库会产生
+# 110 条 RUF001-003 告警。列出的符号即可在文本中出现的字符。
+allowed-confusables = [
+  "，",
+  "。",
+  "：",
+  "；",
+  "！",
+  "？",
+  "（",
+  "）",
+  "【",
+  "】",
+  "《",
+  "》",
+  "、",
+  "「",
+  "」",
+]
+
+[format]
+# 与下方 isort 设置配套，二者同时保持才与 formatter 兼容。
+skip-magic-trailing-comma = true
+
+[lint.isort]
+split-on-trailing-comma = false

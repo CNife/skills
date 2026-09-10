@@ -1,6 +1,6 @@
 #!/usr/bin/env uv run
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.14"
 # dependencies = ["pytest>=8"]
 # ///
 """extract_today.py 的测试 - 04:00 工作日窗口 + 12:00 总结分界 + UUID v7 时间过滤。
@@ -145,10 +145,7 @@ def test_filter_threads_splits_by_window():
     window = extract_today.workday_window(date(2026, 7, 18))
     in_id = _make_thread_id(datetime(2026, 7, 18, 2, 0, tzinfo=UTC))
     out_id = _make_thread_id(datetime(2026, 7, 18, 21, 0, tzinfo=UTC))
-    threads = [
-        {"id": in_id, "title": "窗口内", "messages": 50},
-        {"id": out_id, "title": "窗口外", "messages": 30},
-    ]
+    threads = [{"id": in_id, "title": "窗口内", "messages": 50}, {"id": out_id, "title": "窗口外", "messages": 30}]
     candidates, excluded = extract_today.filter_threads(threads, window)
     assert [c["id"] for c in candidates] == [in_id]
     assert [e["id"] for e in excluded] == [out_id]
