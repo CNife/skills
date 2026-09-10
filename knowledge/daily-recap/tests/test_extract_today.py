@@ -3,7 +3,7 @@
 # requires-python = ">=3.14"
 # dependencies = ["pytest>=8"]
 # ///
-"""extract_today.py 的测试 - 04:00 工作日窗口 + 12:00 总结分界 + UUID v7 时间过滤。
+"""extract_today.py 的测试 - 04:00 工作日窗口 + 12:00 总结分界 + UUID v7 时间过滤 + 机器会话分类。
 
 运行：cd <skill目录> && uv run --script tests/test_extract_today.py
 """
@@ -158,6 +158,67 @@ def test_filter_threads_unparseable_goes_to_candidates():
     candidates, excluded = extract_today.filter_threads(threads, window)
     assert len(candidates) == 1
     assert len(excluded) == 0
+
+
+# ── 机器会话分类 ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "title, family",
+    [
+        ("### Session update  [skill-prompt] ...", "advisor"),
+        ("Complete assignment thoroughly:\n\n# Target\n调研 gh CLI", "subagent"),
+        ("# Target\n调研 gh CLI", "subagent"),
+        ("# Change\n...", "subagent"),
+        ("收集「桌面系统与硬件」2026-09-05 事件证据", "recap"),
+        ("语音与桌面环境事件证据收集", "recap"),
+        ("执行 daily-recap 技能整理日报", "recap"),
+        ("执行 2026-09-05 每日工作整理", "recap"),
+        ("**目标工作日**: 2026-09-05", "recap"),
+        ("**主题域**: SNP 功能分流 XLSX 转 Markdown", "recap"),
+        ("2026-09-04 日报数据核验", "recap"),
+        ("HPC 巡检与数据整理", None),
+        ("翻译 The Harness Playbook", None),
+        ("", None),
+    ],
+)
+def test_classify_machine(title, family):
+    """标题族命中归入对应机器族；普通（人类）标题返回 None。"""
+    assert extract_today.classify_machine(title) == family
+
+
+def test_partition_threads_splits_machine_and_human():
+    """窗口过滤与机器分类合成：人类进 candidates，机器按族进 machine，窗口外进 excluded。"""
+    window = extract_today.workday_window(date(2026, 7, 18))
+    human_id = _make_thread_id(datetime(2026, 7, 18, 2, 0, tzinfo=UTC))
+    advisor_id = _make_thread_id(datetime(2026, 7, 18, 3, 0, tzinfo=UTC))
+    out_id = _make_thread_id(datetime(2026, 7, 18, 21, 0, tzinfo=UTC))
+    threads = [
+        {"id": human_id, "title": "HPC 巡检", "messages": 42},
+        {"id": advisor_id, "title": "### Session update  [skill-prompt]", "messages": 12},
+        {"id": out_id, "title": "窗口外的普通会话", "messages": 8},
+    ]
+    candidates, machine, excluded = extract_today.partition_threads(threads, window)
+    assert [c["id"] for c in candidates] == [human_id]
+    assert [m["id"] for m in machine["advisor"]] == [advisor_id]
+    assert [e["id"] for e in excluded] == [out_id]
+    assert set(machine) == {"advisor"}  # 空族省略
+
+
+# ── --check 输出 ───────────────────────────────────────────────────────────
+
+
+def test_check_lines_reports_attribution():
+    """--check 行：每条线程的 CST 时间 + in/out/unparseable，首行是窗口说明。"""
+    window = extract_today.workday_window(date(2026, 7, 18))
+    in_id = _make_thread_id(datetime(2026, 7, 18, 2, 0, tzinfo=UTC))
+    out_id = _make_thread_id(datetime(2026, 7, 18, 21, 0, tzinfo=UTC))
+    lines = extract_today.check_lines([in_id, out_id, "garbage"], window)
+    assert lines[0].startswith("窗口 [")
+    assert lines[1].startswith(in_id + "\t")
+    assert lines[1].endswith("\tin")
+    assert lines[2].endswith("\tout")
+    assert lines[3] == "garbage\t?\tunparseable"
 
 
 if __name__ == "__main__":
