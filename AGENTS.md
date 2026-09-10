@@ -15,6 +15,7 @@
 
 - 每个脚本单文件自足：依赖写在 PEP 723 内联元数据里，Python 底线 `requires-python = ">=3.14"`（与 `.ruff.toml` 的 `target-version` 一致，改一处就要改另一处），不依赖仓库级 Python 配置。
 - lint / format 统一交给 ruff：规则集是 ruff 默认集外加 RUF 全族，理由写在 `.ruff.toml` 注释里。
+- 可执行脚本 shebang 用 `#!/usr/bin/env -S uv run --script`（注意 `-S`：Linux 的 env 不接受带空格的程序名）。
 
 ## 存档技能
 
