@@ -10,10 +10,10 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.ruff_cache/
 
 # uv
 .python-version
-uv.lock
 
 # Qwen Code
 .qwen/

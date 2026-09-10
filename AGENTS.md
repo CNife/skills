@@ -1,13 +1,13 @@
 # 本仓库
 
-个人 AI agent 技能集合。目录和可用技能见 [README.md](./README.md)。
+个人 AI agent 技能集合。目录和可用技能见 README.md。
 
 ## 修改技能
 
 所有编辑落在 `<category>/<name>/` 仓库源码；`~/.agents/skills/<name>/` 仅是运行时副本。
 
 1. 用 `fd <name>` 定位源码。
-2. 修改并验证：脚本在技能目录运行 `uv run --script scripts/<file>.py`；执行 `uv run ruff check --fix <category>/<name>/`。
+2. 修改并验证：脚本在技能目录运行 `uv run --script scripts/<file>.py`；提交前 `pre-commit run --all-files`。改 Python 脚本前读 `docs/agents/python-scripts.md`（PEP 723 约定、Python 底线、shebang 规范）。
 3. 推送到 main 后，运行 `skill-manager --global source update && skill-manager --global sync` 同步安装副本（GitHub 仓库为唯一源）。
 4. 完成前确认 `name:` 与目录名一致、`description:` 完整；目录结构变动时更新 README.md。
 
@@ -17,6 +17,7 @@
 
 ## 按需参考
 
+- 改 Python 脚本（`scripts/*.py`）时，读 `docs/agents/python-scripts.md`。
 - 创建、读取或分流 GitHub issue 时，读 `docs/agents/issue-tracker.md` 和 `docs/agents/triage-labels.md`。
-- 使用 wayfinder（map/child ticket 工作流）时，读 `docs/agents/wayfinder.md`。
+- 使用 wayfinder 时，读 `docs/agents/wayfinder.md`。
 - 使用 domain-modeling、CONTEXT 或 ADR 时，读 `docs/agents/domain.md`。

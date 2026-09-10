@@ -63,9 +63,12 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 
 ```bash
 git clone https://github.com/CNife/skills.git && cd skills
-uv run pre-commit install   # 安装 git hooks
-uv run pre-commit run --all-files   # 运行全部检查
+uv tool install pre-commit       # 全局工具，不依赖项目环境
+pre-commit install               # 安装 git hooks
+pre-commit run --all-files       # 跑一遍全部检查
 ```
+
+检查项见 `.pre-commit-config.yaml`，ruff 规则与取舍理由见 `.ruff.toml`；`.archive/` 是冻结的历史技能，不参与检查。
 
 ## License
 
