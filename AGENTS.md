@@ -1,6 +1,6 @@
 # 本仓库
 
-个人 AI agent 技能集合。目录和可用技能见 [README.md](./README.md)。
+个人 AI agent 技能集合。目录和可用技能见 README.md。
 
 ## 修改技能
 
