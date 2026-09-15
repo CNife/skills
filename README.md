@@ -9,6 +9,7 @@ knowledge/           个人知识系统
 └── daily-recap/       今日会话聚合成日报，写入 Obsidian 工作日志/日记
 
 utility/               通用工具（与代理无关）
+├── local-github/        ~/github 参考库：克隆、同步与本地路径查询
 ├── models-dev-query/    AI 模型规格查询
 ├── plain-speak/         去除 AI 自造黑话
 ├── treehouse/           Git worktree 池管理
@@ -42,6 +43,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 
 | Skill | 描述 |
 |-------|------|
+| [local-github](./utility/local-github) | 查 GitHub 代码时先克隆到 ~/github 参考库再本地读，不用 curl 抓远端文件；并管理该参考库（clone / sync / ensure / path / list / rename） |
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
 | [plain-speak](./utility/plain-speak) | 对话中 AI 冒出自造黑话、用户跟不上时调用--把自造词去掉，用平实的话重新解释一遍 |
 | [treehouse](./utility/treehouse) | 教 Agent 使用 Treehouse CLI 获取、租用和归还 worktree |
