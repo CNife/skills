@@ -109,9 +109,10 @@ def uuid_v7_timestamp(thread_id: str) -> datetime | None:
         return None
     try:
         ms = int(tid[:12], 16)
-    except ValueError:
+        return datetime.fromtimestamp(ms / 1000, tz=UTC)
+    except ValueError, OSError, OverflowError:
+        # 非 UUID v7 的纯 hex id（如 ef834aab18d0）毫秒戳超出可表示范围
         return None
-    return datetime.fromtimestamp(ms / 1000, tz=UTC)
 
 
 def thread_in_window(thread_id: str, window: tuple[datetime, datetime]) -> bool:

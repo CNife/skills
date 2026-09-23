@@ -88,6 +88,8 @@ def test_uuid_v7_timestamp_invalid():
     assert extract_today.uuid_v7_timestamp("garbage") is None
     assert extract_today.uuid_v7_timestamp("omp-short") is None
     assert extract_today.uuid_v7_timestamp(None) is None
+    # 纯 hex id 前 12 位是合法十六进制但时间戳越界（真实数据里出现过），不得抛出
+    assert extract_today.uuid_v7_timestamp("ef834aab18d0") is None
 
 
 # ── 线程窗口判定 ────────────────────────────────────────────────────────────
