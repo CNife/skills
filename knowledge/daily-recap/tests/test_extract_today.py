@@ -179,6 +179,8 @@ def test_filter_threads_unparseable_goes_to_candidates():
         ("**目标工作日**: 2026-09-05", "recap"),
         ("**主题域**: SNP 功能分流 XLSX 转 Markdown", "recap"),
         ("2026-09-04 日报数据核验", "recap"),
+        ("执行每日回顾技能", "recap"),
+        ("日报采集：2026-09-22 事件汇总", "recap"),
         ("HPC 巡检与数据整理", None),
         ("翻译 The Harness Playbook", None),
         ("", None),

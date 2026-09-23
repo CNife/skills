@@ -51,6 +51,7 @@ MACHINE_TITLE_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
         "recap",
         re.compile(
             r"收集「|事件证据收集|每日工作整理|\*\*目标工作日\*\*|\*\*主题域\*\*|日报.{0,6}核验|daily[\s-]?recap"
+            r"|日报采集|每日回顾"
         ),
     ),
 ]
