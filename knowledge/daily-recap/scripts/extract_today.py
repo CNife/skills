@@ -13,7 +13,7 @@ nmem 是会话唯一来源（多机器同步）。三种模式：
 - 默认：确定目标工作日
 - --filter：从 stdin 读 nmem threads list --json 输出，按 UUID v7 时间戳过滤
   窗口内线程，并把窗口内的机器会话按标题族分组（advisor 镜像 / 子代理任务 /
-  上一轮 recap 自身及子代）
+  session-agent-notice / 上一轮 recap 自身及子代）
 - --check：从 stdin 读 thread_id 列表，逐条报告开始时间（CST）与窗口归属，
   供 collector 批量复核
 
@@ -47,6 +47,7 @@ CST = ZoneInfo("Asia/Shanghai")
 MACHINE_TITLE_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
     ("advisor", re.compile(r"^### Session update")),
     ("subagent", re.compile(r"^(?:Complete assignment thoroughly|# Target|# Change)")),
+    ("agent-notice", re.compile(r"^OMP custom context \(session-agent-notice\)")),
     (
         "recap",
         re.compile(
