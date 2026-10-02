@@ -180,6 +180,8 @@ def test_filter_threads_unparseable_goes_to_candidates():
         ("**主题域**: SNP 功能分流 XLSX 转 Markdown", "recap"),
         ("2026-09-04 日报数据核验", "recap"),
         ("执行每日回顾技能", "recap"),
+        ("整理 2026-09-30 每日工作回顾", "recap"),
+        ("doujin-voice 主题域 2026-09-30 日报证据收集", "recap"),
         ("日报采集：2026-09-22 事件汇总", "recap"),
         ("HPC 巡检与数据整理", None),
         ("翻译 The Harness Playbook", None),
