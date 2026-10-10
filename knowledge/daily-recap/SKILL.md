@@ -30,7 +30,7 @@ cd <skill目录> && uv run --script scripts/extract_today.py
 nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py --filter
 ```
 
-脚本按 UUID v7 时间戳（线程 id 前 48 位 = 会话开始时间毫秒戳，见 CONTEXT.md「线程 ID 时间戳」）把线程分成三组：
+脚本按 UUID v7 时间戳（线程 id 前 48 位 = 会话开始时间毫秒戳，见 GLOSSARY.md「线程 ID 时间戳」）把线程分成三组：
 
 - `candidates`：窗口内非机器线程——进入归类审查
 - `machine`：窗口内机器会话，按标题族分组（`advisor` advisor 镜像 / `subagent` 子代理任务 / `recap` 上一轮 recap 自身及子代）——默认跳过，**跳过必留痕**：归类审查消息里带一行计数备注（如「另跳过 31 条机器会话：advisor×16、子代理×12、上轮 recap×3」）；用户点名可捞回
