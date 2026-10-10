@@ -20,4 +20,4 @@
 - 改 Python 脚本（`scripts/*.py`）时，读 `docs/agents/python-scripts.md`。
 - 创建、读取或分流 GitHub issue 时，读 `docs/agents/issue-tracker.md` 和 `docs/agents/triage-labels.md`。
 - 使用 wayfinder 时，读 `docs/agents/wayfinder.md`。
-- 使用 domain-modeling、CONTEXT 或 ADR 时，读 `docs/agents/domain.md`。
+- 使用 domain-modeling、GLOSSARY 或 ADR 时，读 `docs/agents/domain.md`。
