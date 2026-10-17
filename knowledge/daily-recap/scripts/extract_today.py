@@ -23,7 +23,7 @@ Output（默认）: JSON - date（目标工作日 YYYY-MM-DD）.
 Output（--filter）: JSON - date, total, candidates（窗口内线程）, excluded（窗口外）.
 
 UUID v7 前 48 位（12 hex）编码会话开始时间的毫秒级 Unix 时间戳，从线程 id
-直接解析，无需 REST 调用（见 CONTEXT.md「线程 ID 时间戳」）。
+直接解析，无需 REST 调用（见 GLOSSARY.md「线程 ID 时间戳」）。
 """
 
 import argparse

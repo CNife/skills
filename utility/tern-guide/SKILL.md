@@ -1,6 +1,6 @@
 ---
 name: tern-guide
-description: 操作 Tern（pane/block/host 编排、把命令开在可见窗格、配置与排查）时加载。
+description: Tern 终端编排、配置或排查时加载。
 ---
 
 # Tern
@@ -25,30 +25,39 @@ tern whoami --json                          # 身份链：谁、在哪个 host �
 
 **两套入口**：窗口命令（`ls`/`new`/`split`/`run`/`send`/`capture`/`wait`/`move`）经 daemon 作用于 session；`tern ctl` 经 control endpoint 面向窗口 UI（设置、布局、主题、状态）。前者在装了 Tern 的任何 shell 里可用，后者需要窗口在跑。
 
+命令语法以 `tern COMMAND --help` 为准，全量词汇见 `tern help dev`（开发/脚本用，非稳定 API）。
+
 ## 功能
 
 | 要做 | 命令 |
 | --- | --- |
-| 看现状 | `tern ls`、`tern ls --json`、`tern process BLOCK`、`tern whoami --json` |
-| 开 session | `tern new session NAME --cwd DIR [--keep-open] [-- COMMAND...]` |
-| 开新块 | `tern split BLOCK right\|down [--cwd DIR] [--keep-open] [-- COMMAND...]`、`tern new tab [SESSION]` |
-| 跑命令 | `tern run BLOCK COMMAND...`（打字加回车） |
-| 取证据 | `tern capture BLOCK [--html\|--ansi] [--scrollback] [--surfaces]` |
-| 等结果 | `tern wait BLOCK --until idle=MS\|exit --timeout SECONDS` |
+| 看现状 | `tern ls [--json]`、`tern process BLOCK`、`tern whoami --json` |
+| 开 session / 新块 | `tern new session`、`tern split`、`tern new tab` |
+| 跑命令 | `tern run BLOCK COMMAND...` |
+| 取证据 | `tern capture BLOCK`（`--ansi` 留色、`--scrollback` 取历史、`--html` 给片段） |
+| 等结果 | `tern wait BLOCK --until exit\|idle=MS` |
 | 注入输入 | `tern send BLOCK text TEXT`、`keys COMBO`、`paste TEXT` |
-| 搬运与聚焦 | `tern move BLOCK left-of\|right-of\|above\|below BLOCK`、`move BLOCK tab N\|new-tab`、`tern focus BLOCK` |
-| 保活 | `tern keep-open BLOCK on\|off`（程序成功退出时默认关块） |
+| 搬运与聚焦 | `tern move`、`tern focus` |
+| 保活 | `tern keep-open BLOCK on`（程序成功退出时默认关块） |
 | 事件流 | `tern events [--filter KIND,...]`，JSON lines 持续输出 |
-| 开文件 | `tern open --split right\|--tab\|--preview PATH[:LINE[:COL]]` |
+| 开文件 | `tern open --split\|--tab\|--preview PATH[:LINE[:COL]]` |
 
 要点：
 
-- **`--until exit` 用程序状态码返回**，`124` 表示超时。`--until prompt` 在 0.9.2 上实测稳定超时，等命令结束用 `idle=<ms>` 或 `exit`。
+- **`idle=MS` 只等输出安静，不等于任务结束。** 实测：`wait --until idle=800` 在 `sleep 4` 跑到一半时就返回 rc=0，后续输出还没出现。构建、下载、训练这类间歇性输出的任务尤其会误判。
+- **`--until exit` 才等程序退出**，并透传状态码（`124` 是超时）。它只在 block 由那条命令自己创建时才有意义（`tern split ... -- COMMAND`）。
+- **判断「已完成」用哨兵**：让命令末尾写一个只有它能产生的东西，再轮询它。
+
+  ```sh
+  tern run "$B" 'cargo test 2>&1; printf "RC=%s\n" $? > /tmp/task.done'
+  until [ -s /tmp/task.done ]; do sleep 1; done; cat /tmp/task.done
+  ```
+
+  写文件比在屏幕里 grep 字符串可靠 —— 命令行本身也会出现在 capture 里，会自己匹配自己。
 - **`send text` 只打字，不回车**；要执行再发 `keys Enter`。这正好用来先让人看见、再决定执行。
-- **`capture` 是交证据的正路**：`--ansi` 保留颜色，`--scrollback` 取历史，`--html` 给可渲染片段。
 - 长任务的托管模型（`proc://`、远端、子代理）见 `long-running-tasks`；要人看得见、能接管、能跨设备看，就把命令开在 Tern 的 block 里。
 
-改窗口前先认准目标：`tern ls` 拿 id 再动手，`kill` 与 `close` 都按 id 走。自己所在的 block 是 `$TERN_PANE`，操作别的 block 时把它留着。
+**动窗口先认准目标**：`tern close BLOCK` 关单个 block，`tern kill session SESSION` 终止整个 session —— 两者层级不同，别把 block id 套进 `kill`。承载自己的 block 是 `$TERN_PANE`，读它、别动它。
 
 ## 配置
 
@@ -56,15 +65,14 @@ tern whoami --json                          # 身份链：谁、在哪个 host �
 
 | 要改 | 命令 |
 | --- | --- |
-| 字号 | `tern ctl font 16` |
-| 字体 | `tern ctl font-family '"Family Name"'`（含空格时引号要字面传入）、`ui-font`、`code-font` |
-| 行高 | `tern ctl adjust-cell-height 20%` |
-| 主题 | `tern ctl theme dark <name>` |
-| 布局 | `tern ctl layout rail\|float\|tiles\|studio` |
-| 透明度 | `tern ctl glass 60` |
-| 窗口控件 | `tern ctl decorations system\|lights\|buttons` |
+| 字号 / 行高 | `tern ctl font 16`、`tern ctl adjust-cell-height 20%` |
+| 字体（网格 / 界面 / 代码） | `tern ctl font-family`、`ui-font`、`code-font` |
+| 主题 / 布局 / 密度 | `tern ctl theme`、`layout`、`style` |
+| 透明度 / 窗口控件 | `tern ctl glass 60`、`decorations` |
 | CSS | `tern ctl css reload [DIR]` 重读样式表 |
-| 读当前值 | `tern ctl state`（`font`、`font_family`、`theme`、`layout`、`hosts`…） |
+| 读当前值 | `tern ctl state` |
+
+含空格的字体名要把引号**字面**传进去（`tern ctl font-family '"JetBrains Maple Mono"'`），否则被拆成多个参数报 `expected font-family`。默认值不必记，`tern ctl state` 会报当前生效值。
 
 ## 排查
 
@@ -74,6 +82,6 @@ tern whoami --json                          # 身份链：谁、在哪个 host �
 | `ctl` 报参数错或无响应 | 命令拼错（`tern help dev` 是全量词汇）、或窗口没有 control endpoint |
 | 窗口命令落在错的窗口 | 显式 `--window KEY`，或看 `$TERN_WINDOW_KEY` |
 | 关窗口后程序没了 | daemon 没起：`tern daemon --login` |
-| `wait --until prompt` 一直超时 | 换 `--until idle=<ms>` 或 `--until exit` |
+| `wait` 提前返回、结果不全 | `idle` 只看安静；改用哨兵或 `--until exit` |
 | 远端连不上 | `tern remote doctor HOST` 逐项看 spec、relay、pkarr、host key、auth |
 | 其他 | `~/.local/state/tern/logs/{tern,tern-daemon,tern-remote}.log` |
