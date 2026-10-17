@@ -1,6 +1,8 @@
-# Daily Recap 领域模型
+# Daily Recap
 
-## 术语表
+日报技能的术语表。
+
+## 语言
 
 ### Daily Recap（日报）
 

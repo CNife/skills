@@ -28,7 +28,7 @@ cd <skill目录> && uv run --script scripts/extract_today.py
 nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py --filter
 ```
 
-`--filter` 模式从 stdin 读 nmem 线程列表，按 UUID v7 时间戳（线程 id 前 48 位 = 会话开始时间毫秒戳，见 CONTEXT.md「线程 ID 时间戳」）精确判定窗口归属，输出 `candidates`（窗口内）和 `excluded`（窗口外）。
+`--filter` 模式从 stdin 读 nmem 线程列表，按 UUID v7 时间戳（线程 id 前 48 位 = 会话开始时间毫秒戳，见 GLOSSARY.md「线程 ID 时间戳」）精确判定窗口归属，输出 `candidates`（窗口内）和 `excluded`（窗口外）。
 
 **分页**：`nmem threads list` 排序不是严格日期序（按导入批次混杂），`--offset` 递增翻页，每页管道 `--filter`，直到连续多页无窗口内候选才停，并把翻页范围告知用户。
 
