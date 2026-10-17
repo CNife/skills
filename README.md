@@ -13,6 +13,7 @@ utility/               通用工具（与代理无关）
 ├── models-dev-query/    AI 模型规格查询
 ├── plain-speak/         去除 AI 自造黑话
 ├── treehouse/           Git worktree 池管理
+├── tern-guide/          Tern 终端：pane/block 编排、配置与文档导航
 └── yadm/                个人 dotfiles 管理
 
 methodology/         方法论（组合并强化 agent 工作方式的技能）
@@ -47,6 +48,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
 | [plain-speak](./utility/plain-speak) | 对话中 AI 冒出自造黑话、用户跟不上时调用--把自造词去掉，用平实的话重新解释一遍 |
 | [treehouse](./utility/treehouse) | 教 Agent 使用 Treehouse CLI 获取、租用和归还 worktree |
+| [tern-guide](./utility/tern-guide) | 教 Agent 操作 Tern 终端：pane/block/host 编排、把命令开在可见窗格、配置与按需查文档 |
 | [yadm](./utility/yadm) | 按个人约定管理 yadm dotfiles、alternates、transcrypt 与 bootstrap，并直接提交推送 main |
 
 ### methodology/
