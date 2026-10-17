@@ -13,9 +13,10 @@
 | 症状 | 原因 | 操作 |
 |------|------|------|
 | `nmem threads list` 无窗口内线程 | 当日未用 nmem 或确实无会话 | 正常终止，告知用户"目标工作日没有会话记录" |
-| 翻页后仍担心漏线程 | 列表排序**不是严格日期序**（按导入批次混杂） | 分页停止规则见 SKILL.md Step 0「分页」 |
-| `nmem threads show` 只返回 10 条消息 | 默认 `--limit 10` | **必须显式传 `--limit`**（如 300）；消息更多时 `--offset` 续读 |
-| `nmem threads show` 404/not found | 线程 id 前缀漂移（同一会话 `pi-`/`omp-` 都可能出现）或 id 无效 | 用 `nmem threads search <关键词>` 语义检索定位；仍失败则标记「内容待补充」，不阻塞整体（批准条目需回头告知用户，见 SKILL.md 2a） |
+| 翻页后仍担心漏线程 | 列表排序**不是严格日期序**（按导入批次混杂） | 分页停止规则见 SKILL.md 第 1 步「分页」 |
+| `nmem threads show` 只返回 10 条消息 | 默认 `--limit 10` | 显式传 `--limit`，按消息数选读法（见 `agents/recap-collector.md`「读写纪律」） |
+| `nmem threads show` 超时（约 30s） | 并发过载或大响应 | 同一时刻最多 2 个并发调用；超时最多重试 1 次；再失败记「读取失败」继续，不阻塞 |
+| `nmem threads show` 404/not found | 线程 id 前缀漂移（同一会话 `pi-`/`omp-` 都可能出现）或 id 无效 | 用 `nmem threads search <关键词>` 语义检索定位；仍失败则标记「内容待补充」，不阻塞整体（批准条目需回头告知用户，见 SKILL.md 3a） |
 | 线程读取失败/空线程 | 服务端问题 | 标记「内容待补充」，不阻塞整体 |
 
 ## 写入
@@ -26,6 +27,6 @@
 
 ## 时间口径备忘
 
-- **UUID v7 是时间过滤的唯一口径**：线程 id（去 `pi-`/`omp-` 前缀、去连字符）前 12 位十六进制 = 会话开始时间毫秒级 Unix 时间戳，转 CST 判断 [04:00, 次日 04:00) 窗口。`extract_today.py --filter` 自动完成此计算。
+- **UUID v7 是时间过滤的唯一口径**：线程 id（去 `pi-`/`omp-` 前缀、去连字符）前 12 位十六进制 = 会话开始时间毫秒级 Unix 时间戳，转 CST 判断 [04:00, 次日 04:00) 窗口。listing 阶段由 `extract_today.py --filter` 自动完成；collector 侧批量复核用 `extract_today.py --check`（从 stdin 读 thread_id）。
 - 线程 `created_at` 是**日级 UTC 日期**（"Aug 02, 2026"），只作粗筛参考，不作窗口判定。
 - 不用 nmem REST 接口取消息级时间戳--UUID v7 已精确到毫秒，REST 被 UUID v7 旁路。

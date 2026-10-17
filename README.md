@@ -6,12 +6,11 @@
 
 ```text
 knowledge/           个人知识系统
-├── nmem-maintenance/  Nowledge Mem 知识库巡检与事件处理
 └── daily-recap/       今日会话聚合成日报，写入 Obsidian 工作日志/日记
 
 utility/               通用工具（与代理无关）
+├── local-github/        ~/github 参考库：克隆、同步与本地路径查询
 ├── models-dev-query/    AI 模型规格查询
-├── aihot-leaderboard/   AIHOT 大模型排行榜查询
 ├── plain-speak/         去除 AI 自造黑话
 ├── treehouse/           Git worktree 池管理
 ├── tern-guide/          Tern 终端：pane/block 编排、配置与文档导航
@@ -35,21 +34,18 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 
 ## 可用 Skills
 
-> pi-agent 分类的 6 个技能已于 2026-08-02 迁入 [CNife/pi-extensions](https://github.com/CNife/pi-extensions) 的 `personal/skills/`，随 pi git 包分发；本仓库不再维护。
-
 ### knowledge/
 
 | Skill | 描述 |
 |-------|------|
-| [nmem-maintenance](./knowledge/nmem-maintenance) | Nowledge Mem 知识库巡检--检查服务状态、审查待处理事件、分类处理陈旧结晶/重复记忆/矛盾 |
 | [daily-recap](./knowledge/daily-recap) | 整理所有机器上的 Pi/OMP 会话，按主题聚合成结构化日报，写入 Obsidian 工作日志或个人日记 |
 
 ### utility/
 
 | Skill | 描述 |
 |-------|------|
+| [local-github](./utility/local-github) | 查 GitHub 代码时先克隆到 ~/github 参考库再本地读，不用 curl 抓远端文件；并管理该参考库（clone / sync / ensure / path / list / rename） |
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
-| [aihot-leaderboard](./utility/aihot-leaderboard) | 查询 AIHOT 大模型排行榜 - 总榜前 30、单模型各榜明细、12 张来源榜单全量排名与分数 |
 | [plain-speak](./utility/plain-speak) | 对话中 AI 冒出自造黑话、用户跟不上时调用--把自造词去掉，用平实的话重新解释一遍 |
 | [treehouse](./utility/treehouse) | 教 Agent 使用 Treehouse CLI 获取、租用和归还 worktree |
 | [tern-guide](./utility/tern-guide) | 教 Agent 操作 Tern 终端：pane/block/host 编排、把命令开在可见窗格、配置与按需查文档 |
@@ -65,9 +61,12 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 
 ```bash
 git clone https://github.com/CNife/skills.git && cd skills
-uv run pre-commit install   # 安装 git hooks
-uv run pre-commit run --all-files   # 运行全部检查
+uv tool install pre-commit       # 全局工具，不依赖项目环境
+pre-commit install               # 安装 git hooks
+pre-commit run --all-files       # 跑一遍全部检查
 ```
+
+检查项见 `.pre-commit-config.yaml`，ruff 规则与取舍理由见 `.ruff.toml`；`.archive/` 是冻结的历史技能，不参与检查。
 
 ## License
 

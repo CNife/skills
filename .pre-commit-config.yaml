@@ -1,3 +1,13 @@
+# 仓库脚本的语法底线是 3.14（PEP 723 的 requires-python + .ruff.toml 的 target-version），
+# ruff-format 会照这个目标产出新语法（如 PEP 758 的无括号 except 元组）。pre-commit 的
+# Python 钩子默认用自建 venv 的解释器解析源码，解释器低于 3.14 时直接报 SyntaxError，
+# 因此显式钉住钩子的解释器版本，与脚本基线保持一致。
+default_language_version:
+  python: python3.14
+
+# .archive/ 是已冻结的历史技能，不参与任何检查（与 .ruff.toml 的 extend-exclude 一致）。
+exclude: ^\.archive/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -13,18 +23,9 @@ repos:
       - id: mixed-line-ending
         args: ["--fix=lf"]
       - id: trailing-whitespace
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: "0.11.7"
-    hooks:
-      - id: uv-lock
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.11
+    rev: v0.16.6
     hooks:
       - id: ruff-check
         args: ["--fix"]
       - id: ruff-format
-  - repo: https://github.com/rvben/rumdl-pre-commit
-    rev: v0.1.76
-    hooks:
-      - id: rumdl
-      - id: rumdl-fmt

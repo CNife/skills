@@ -2,6 +2,8 @@
 name: nmem-maintenance
 description: 周期性巡检 Nowledge Mem 知识库，分类处理后台积累的待办事件。
 disable-model-invocation: true
+metadata:
+  internal: true
 ---
 
 # nmem-maintenance - Nowledge Mem 知识库巡检
