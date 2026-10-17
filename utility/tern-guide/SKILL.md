@@ -1,6 +1,6 @@
 ---
 name: tern-guide
-description: Tern 终端编排、配置或排查时加载。
+description: Tern 终端：pane/block 编排、配置、查文档与排错时加载。
 ---
 
 # Tern
@@ -25,7 +25,13 @@ tern whoami --json                          # 身份链：谁、在哪个 host �
 
 **两套入口**：窗口命令（`ls`/`new`/`split`/`run`/`send`/`capture`/`wait`/`move`）经 daemon 作用于 session；`tern ctl` 经 control endpoint 面向窗口 UI（设置、布局、主题、状态）。前者在装了 Tern 的任何 shell 里可用，后者需要窗口在跑。
 
-命令语法以 `tern COMMAND --help` 为准，全量词汇见 `tern help dev`（开发/脚本用，非稳定 API）。
+命令语法以 `tern COMMAND --help` 为准，全量词汇见 `tern help dev`（开发/脚本用，非稳定 API）。`tern ctl` 是例外：它没有 `--help`，命令表只在 `tern help dev`。
+
+## 文档
+
+查 Tern 的概念、协议、插件、场景脚本、block 类型、样式、API，或排错入口（失败在哪显示、日志路径、错误成因）时，读 `DOCS.md` —— 文档站 <https://docs.stencil.so/tern/> 的按需跳转表。
+
+文档站是插件 SDK 手册，窗口命令只在 `--help` 里：`tern ls`、`tern split`、`tern run`、`tern wait` 这类动词在整本里零出现。
 
 ## 功能
 
@@ -41,6 +47,7 @@ tern whoami --json                          # 身份链：谁、在哪个 host �
 | 保活 | `tern keep-open BLOCK on`（程序成功退出时默认关块） |
 | 事件流 | `tern events [--filter KIND,...]`，JSON lines 持续输出 |
 | 开文件 | `tern open [--split right\|down\|--tab\|--preview] PATH[:LINE[:COL]]` |
+| 查远端 | `tern remote doctor [user@]HOST` 逐项过 spec、udp、relay、pkarr、host key、auth；`tern remote hosts` 列已连过的 |
 
 要点：
 
@@ -74,15 +81,3 @@ tern whoami --json                          # 身份链：谁、在哪个 host �
 | 读当前值 | `tern ctl state` |
 
 含空格的字体名要把引号**字面**传进去（`tern ctl font-family '"JetBrains Maple Mono"'`），否则被拆成多个参数报 `expected font-family`。默认值不必记，`tern ctl state` 会报当前生效值。
-
-## 排查
-
-| 症状 | 查 |
-| --- | --- |
-| `tern: command not found` | PATH；`tern --version` |
-| `ctl` 报参数错或无响应 | 命令拼错（`tern help dev` 是全量词汇）、或窗口没有 control endpoint |
-| 窗口命令落在错的窗口 | 显式 `--window KEY`，或看 `$TERN_WINDOW_KEY` |
-| 关窗口后程序没了 | daemon 没起：`tern daemon --login` |
-| `wait` 提前返回、结果不全 | `idle` 只看安静；改用哨兵或 `--until exit` |
-| 远端连不上 | `tern remote doctor HOST` 逐项看 spec、relay、pkarr、host key、auth |
-| 其他 | `~/.local/state/tern/logs/{tern,tern-daemon,tern-remote}.log` |
