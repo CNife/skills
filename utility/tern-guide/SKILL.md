@@ -46,10 +46,10 @@ tern whoami --json                          # 身份链：谁、在哪个 host �
 
 - **`idle=MS` 只等输出安静，不等于任务结束。** 实测：`wait --until idle=800` 在 `sleep 4` 跑到一半时就返回 rc=0，后续输出还没出现。构建、下载、训练这类间歇性输出的任务尤其会误判。
 - **`--until exit` 才等程序退出**，并透传状态码（`124` 是超时）。它只在 block 由那条命令自己创建时才有意义（`tern split ... -- COMMAND`）。
-- **判断「已完成」用哨兵**：让命令末尾写一个只有它能产生的东西，再轮询它。每次任务换全新路径 —— 固定名字会把上一轮的残留读成本轮结果。
+- **判断「已完成」用哨兵**：让命令末尾写一个只有它能产生的东西，再轮询它。每次任务换全新路径（`mktemp`）—— 固定名字或 `$$` 都会撞上上一轮的残留。
 
   ```sh
-  D=/tmp/task-$$.done; rm -f "$D"
+  D=$(mktemp /tmp/task.XXXXXX)
   tern run "$B" "cargo test 2>&1; printf 'RC=%s\n' \$? > $D"
   until [ -s "$D" ]; do sleep 1; done; cat "$D"
   ```
