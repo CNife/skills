@@ -27,18 +27,18 @@ cd <skill目录> && uv run --script scripts/extract_today.py
 **列举候选**（nmem 是唯一来源）：
 
 ```bash
-nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py --filter
+nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py --probe
 ```
 
 脚本按 UUID v7 时间戳（线程 id 前 48 位 = 会话开始时间毫秒戳，见 GLOSSARY.md「线程 ID 时间戳」）把线程分成三组：
 
 - `candidates`：窗口内非机器线程——进入归类审查
-- `machine`：窗口内机器会话，按标题族分组（`advisor` advisor 镜像 / `subagent` 子代理任务 / `recap` 上一轮 recap 自身及子代）——默认跳过，**跳过必留痕**：归类审查消息里带一行计数备注（如「另跳过 31 条机器会话：advisor×16、子代理×12、上轮 recap×3」）；用户点名可捞回
+- `machine`：窗口内机器会话，按族分组（`advisor` advisor 镜像 / `subagent` 子代理任务 / `recap` 上一轮 recap 自身及子代）——默认跳过，**跳过必留痕**：归类审查消息里带一行计数备注（如「另跳过 31 条机器会话：advisor×16、子代理×12、上轮 recap×3」）；用户点名可捞回
 - `excluded`：窗口外线程——不处理
 
-机器标题族在脚本里维护；新形态的机器会话照常进候选，确认后补进脚本。
+`--probe` = `--filter` + 对标题族认不出的候选取首条 user 消息复核机器族：父会话派发的子代理与 recap 子代常带友好标题（如「为 18 个 UP 主打标并生成 out/tags/part07.json」），与人类标题无从区分，只看标题必漏。每条候选一次 `nmem threads show` 调用，故默认上限 60 条（`--probe-limit`），输出 `probe` 字段留痕：`reclassified` / `no_task_message`（首条消息里没有任务提示，人类会话的正常形态）/ `unreadable` / `not_probed`。候选规模远超上限时退回 `--filter`，靠归类审查人工辨认。机器判族规则在脚本里维护；新形态的机器会话照常进候选，确认后补进脚本。
 
-**分页**：`nmem threads list` 排序不是严格日期序（按导入批次混杂），`--offset` 递增翻页，每页管道 `--filter`，直到连续多页无窗口内候选才停；翻页范围在归类审查消息里一行带过。
+**分页**：`nmem threads list` 排序不是严格日期序（按导入批次混杂），`--offset` 递增翻页，每页管道 `--probe`，直到连续多页无窗口内候选才停；翻页范围在归类审查消息里一行带过。
 
 **其余过滤**：消息数 <10 的候选多为测试探针，聚合成一行备注（数量 + 特征），不逐条进表。**留痕原则**：窗口内每个线程要么进候选表、要么在备注里有据可查——包括机器会话与 stub，不允许静默消失。
 

@@ -8,6 +8,8 @@
 运行：cd <skill目录> && uv run --script tests/test_extract_today.py
 """
 
+import json
+import subprocess
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -209,6 +211,128 @@ def test_partition_threads_splits_machine_and_human():
     assert [m["id"] for m in machine["advisor"]] == [advisor_id]
     assert [e["id"] for e in excluded] == [out_id]
     assert set(machine) == {"advisor"}  # 空族省略
+
+
+# ── 首条消息判族（--probe） ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "content, family",
+    [
+        # 父会话派发的子代理任务：标题被起了友好名，只能靠首条消息认出来
+        ("Complete assignment thoroughly:\n\n# Target\nout/tags/part07.json", "subagent"),
+        ("# Target\n调研 gh CLI", "subagent"),
+        # 上一轮 recap 的收集器/核验子代同样带友好标题，且判据更具体，优先归 recap
+        ("Complete assignment thoroughly:\n\n**主题域**: genome-assembly\n**目标工作日**: 2026-10-23", "recap"),
+        ("**主题域**: CKB 日报", "recap"),
+        ("Complete assignment thoroughly:\n\n逐条核验下列待写入日报的声称", "recap"),
+        # 人类提问与空内容都不算机器族
+        ("opencli 有操作b站的适配器吗", None),
+        ("这个仓库是干嘛的？", None),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_first_message_family(content, family):
+    """首条 user 消息按任务提示判族；人类提问返回 None。"""
+    assert extract_today.first_message_family(content) == family
+
+
+class _FakeCompleted:
+    def __init__(self, stdout: str = "", returncode: int = 0):
+        self.stdout = stdout
+        self.stderr = ""
+        self.returncode = returncode
+
+
+def _thread_json(*messages: tuple[str, str]) -> str:
+    return json.dumps({"messages": [{"role": role, "content": content} for role, content in messages]})
+
+
+def test_fetch_first_message_skips_host_notices(monkeypatch):
+    """宿主注入的通知消息（OMP custom context）跳过，取其后第一条人类/任务提问。"""
+    monkeypatch.setattr(
+        extract_today.subprocess,
+        "run",
+        lambda *a, **kw: _FakeCompleted(
+            _thread_json(
+                ("user", "OMP custom context (xdev-mount-notice):\n<system-notice>"),
+                ("assistant", "[thinking]"),
+                ("user", "这个仓库是干嘛的？"),
+            )
+        ),
+    )
+    assert extract_today.fetch_first_message("omp-x") == ("这个仓库是干嘛的？", True)
+
+
+def test_fetch_first_message_only_notices(monkeypatch):
+    """前几条消息全被通知占满时读取成功、正文为 None（人类会话的常见形态，不是读取失败）。"""
+    monkeypatch.setattr(
+        extract_today.subprocess,
+        "run",
+        lambda *a, **kw: _FakeCompleted(_thread_json(("user", "OMP custom context (skill-prompt): ..."))),
+    )
+    assert extract_today.fetch_first_message("omp-x") == (None, True)
+
+
+@pytest.mark.parametrize("outcome", ["nonzero", "bad_json", "timeout"])
+def test_fetch_first_message_read_failure(monkeypatch, outcome):
+    """CLI 非零退出 / 输出不是合法 JSON / 超时都算读取失败。"""
+
+    def fake_run(*args, **kwargs):
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(cmd="nmem", timeout=extract_today.NMEM_TIMEOUT_SECONDS)
+        if outcome == "nonzero":
+            return _FakeCompleted("", returncode=1)
+        return _FakeCompleted("not json")
+
+    monkeypatch.setattr(extract_today.subprocess, "run", fake_run)
+    assert extract_today.fetch_first_message("omp-x") == (None, False)
+
+
+def test_probe_candidates_moves_only_identified_tasks(monkeypatch):
+    """--probe：判出族的候选移入对应机器族，读不出的与无线程内可判消息的都留在候选。"""
+    ids = {
+        name: _make_thread_id(datetime(2026, 7, 18, hour, 0, tzinfo=UTC))
+        for name, hour in [("sub", 2), ("recap", 4), ("human", 6), ("broken", 8), ("limit", 10)]
+    }
+    candidates = [{"id": tid, "title": name, "messages": 20} for name, tid in ids.items()]
+    candidates.append({"id": "garbage", "title": "遗留", "messages": 20})
+    replies = {
+        ids["sub"]: ("# Target\n子代理任务", True),
+        ids["recap"]: ("**主题域**: genome-assembly", True),
+        ids["human"]: (None, True),
+        ids["broken"]: (None, False),
+    }
+    monkeypatch.setattr(extract_today, "fetch_first_message", lambda tid: replies.get(tid, ("# Change", True)))
+
+    human, machine, report = extract_today.probe_candidates(candidates, {}, limit=4)
+
+    assert [c["id"] for c in machine["subagent"]] == [ids["sub"]]
+    assert [c["id"] for c in machine["recap"]] == [ids["recap"]]
+    # 读不出的、无线程内可判消息的、超出探针上限的、时戳不可解析的一律留在候选
+    assert sorted(c["id"] for c in human) == sorted([ids["human"], ids["broken"], ids["limit"], "garbage"])
+    assert report["probed"] == 4
+    assert report["reclassified"] == 2
+    assert report["no_task_message"] == [ids["human"]]
+    assert report["unreadable"] == [ids["broken"]]
+    assert report["skipped_unparseable"] == 1
+    assert report["not_probed"] == 1
+
+
+def test_probe_candidates_reuses_title_machine_families(monkeypatch):
+    """--probe 不覆盖标题族已判出的机器会话：探针结果并入同一族。"""
+    sub_id = _make_thread_id(datetime(2026, 7, 18, 2, 0, tzinfo=UTC))
+    monkeypatch.setattr(extract_today, "fetch_first_message", lambda tid: ("# Target\n任务", True))
+    machine = {"subagent": [{"id": "title-caught", "title": "x24h_c", "messages": 11}]}
+
+    human, machine, report = extract_today.probe_candidates(
+        [{"id": sub_id, "title": "为 18 个 UP 主打标", "messages": 30}], machine, limit=60
+    )
+
+    assert human == []
+    assert [c["id"] for c in machine["subagent"]] == ["title-caught", sub_id]
+    assert report["reclassified"] == 1
 
 
 # ── --check 输出 ───────────────────────────────────────────────────────────
