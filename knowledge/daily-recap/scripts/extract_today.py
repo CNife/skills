@@ -9,11 +9,14 @@ extract_today.py - 确定目标工作日，并过滤/分类 nmem 线程。
 的会话归前一工作日。"总结哪个工作日"以 12:00 为界（<12:00 昨天 / ≥12:00
 今天），默认由 recap 时刻自动选择，可用位置参数或 --date 显式指定。
 
-nmem 是会话唯一来源（多机器同步）。三种模式：
+nmem 是会话唯一来源（多机器同步）。四种模式：
 - 默认：确定目标工作日
 - --filter：从 stdin 读 nmem threads list --json 输出，按 UUID v7 时间戳过滤
   窗口内线程，并把窗口内的机器会话按标题族分组（advisor 镜像 / 子代理任务 /
   session-agent-notice / 上一轮 recap 自身及子代）
+- --probe：同 --filter，但对标题族认不出的候选用首条 user 消息复核机器族
+  （父会话派发的子代理与 recap 子代常带友好标题，与人类标题无从区分）——
+  每条一次 nmem threads show 调用，故单独成模式，只在候选规模小的时候用
 - --check：从 stdin 读 thread_id 列表，逐条报告开始时间（CST）与窗口归属，
   供 collector 批量复核
 
@@ -21,12 +24,14 @@ Usage:
     uv run --script extract_today.py                          # 目标工作日（自动）
     uv run --script extract_today.py 2026-07-09               # 指定工作日
     uv run --script extract_today.py --date 2026-07-09        # 同上，显式
-    nmem threads list --limit 200 --json | uv run --script extract_today.py --filter
+    nmem threads list --limit 200 --json | uv run --script extract_today.py --probe
     printf '%s\n' omp-xxx omp-yyy | uv run --script extract_today.py --check --date 2026-07-09
 
 Output（默认）: JSON - date.
 Output（--filter）: JSON - date, total, candidates（窗口内非机器线程）,
     machine（窗口内机器会话按族分组）, excluded（窗口外线程）.
+Output（--probe）: 同上，另加 probe（probed / skipped_unparseable / not_probed /
+    reclassified / no_task_message / unreadable）说明本轮探针做了什么.
 Output（--check）: 每行 <thread_id>\t<CST 时间>\t<in|out|unparseable>，首行窗口说明.
 
 UUID v7 前 48 位（12 hex）编码会话开始时间的毫秒级 Unix 时间戳，从线程 id
@@ -36,6 +41,7 @@ UUID v7 前 48 位（12 hex）编码会话开始时间的毫秒级 Unix 时间�
 import argparse
 import json
 import re
+import subprocess
 import sys
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -58,6 +64,23 @@ MACHINE_TITLE_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+# 机器会话消息族：父会话派发的任务（子代理 / 上一轮 recap 的收集器与核验）。
+# 这类会话的 nmem 标题常被父会话起了友好名（如「为 18 个 UP 主打标并生成 …json」），
+# 与人类会话标题无从区分，只能取首条 user 消息判族（--probe）。
+MACHINE_MESSAGE_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
+    # recap 子代的判据更具体，先判（否则会被通用的子代理开头吃掉）
+    ("recap", re.compile(r"\*\*主题域\*\*|\*\*目标工作日\*\*|逐条核验|事件证据收集")),
+    ("subagent", re.compile(r"^(?:Complete assignment thoroughly|# Target|# Change)")),
+]
+
+# 首条 user 消息可能是宿主注入的上下文通知，判族时跳过（不是人会话的提问）。
+SYSTEM_NOTICE_PREFIX = "OMP custom context"
+
+# --probe 对未命中标题族的候选逐条取首条消息，每条一次 nmem 调用；超出上限则只探前 N 条。
+PROBE_LIMIT_DEFAULT = 60
+NMEM_TIMEOUT_SECONDS = 30
+
+
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
@@ -67,7 +90,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--date", dest="date_opt", default=None, help="同位置参数，显式指定目标工作日")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--filter", action="store_true", help="从 stdin 读 nmem JSON，按窗口过滤并分类机器会话")
+    mode.add_argument(
+        "--probe",
+        action="store_true",
+        help="同 --filter，另对未命中标题族的候选取首条消息复核机器族（每条一次 nmem 调用）",
+    )
     mode.add_argument("--check", action="store_true", help="从 stdin 读 thread_id 列表，逐条报告窗口归属")
+    parser.add_argument(
+        "--probe-limit",
+        type=int,
+        default=PROBE_LIMIT_DEFAULT,
+        help=f"--probe 最多探针的候选条数（默认 {PROBE_LIMIT_DEFAULT}）",
+    )
     args = parser.parse_args()
     args.date = args.date_opt or args.date
     return args
@@ -176,6 +210,92 @@ def partition_threads(
     return human, machine, excluded
 
 
+def read_threads() -> list[dict]:
+    """从 stdin 读 nmem threads list --json 输出，取线程列表。"""
+    data = json.load(sys.stdin)
+    return data.get("threads", data) if isinstance(data, dict) else data
+
+
+def first_message_family(content: str | None) -> str | None:
+    """按首条 user 消息正文判机器族，返回族名（subagent/recap）或 None。"""
+    if not content:
+        return None
+    for family, pattern in MACHINE_MESSAGE_FAMILIES:
+        if pattern.search(content):
+            return family
+    return None
+
+
+def fetch_first_message(thread_id: str) -> tuple[str | None, bool]:
+    """取线程首条非系统通知的 user 消息正文。
+
+    返回 (正文, 读取成功)：读取成功但前几条消息全被通知/助手占满时正文为 None
+    （人类会话的提问常被拼进宿主通知里，属正常情形）；CLI 失败/超时/JSON 不合法
+    时读取成功为 False。
+    """
+    try:
+        proc = subprocess.run(
+            ["nmem", "threads", "show", thread_id, "--limit", "5", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=NMEM_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None, False
+    if proc.returncode != 0:
+        return None, False
+    try:
+        messages = json.loads(proc.stdout).get("messages") or []
+    except json.JSONDecodeError, AttributeError:
+        return None, False
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = (msg.get("content") or "").strip()
+        if content and not content.startswith(SYSTEM_NOTICE_PREFIX):
+            return content, True
+    return None, True
+
+
+def probe_candidates(
+    candidates: list[dict], machine: dict[str, list[dict]], limit: int
+) -> tuple[list[dict], dict[str, list[dict]], dict[str, object]]:
+    """对标题族认不出的候选逐条取首条消息复核机器族。
+
+    返回 (candidates, machine, report)：判出族的候选从 candidates 移入 machine 对应族；
+    读不出首条消息的记入 report["unreadable"]，无线程内可判消息的记入
+    report["no_task_message"]，两者都仍留在 candidates（假阴性只多留一条候选，
+    由归类审查这道人工门兜底）。
+    只探时戳可解析（即可能落在窗口内）的候选；超过 limit 只探前 limit 条。
+    """
+    probeable = [c for c in candidates if uuid_v7_timestamp(c.get("id", "")) is not None]
+    probed = probeable[:limit]
+    moved: set[str] = set()
+    unreadable: list[str] = []
+    no_message: list[str] = []
+    for thread in probed:
+        content, ok = fetch_first_message(thread["id"])
+        if not ok:
+            unreadable.append(thread["id"])
+            continue
+        family = first_message_family(content)
+        if family is None:
+            no_message.append(thread["id"])
+            continue
+        machine.setdefault(family, []).append(thread)
+        moved.add(thread["id"])
+    report: dict[str, object] = {
+        "probed": len(probed),
+        "skipped_unparseable": len(candidates) - len(probeable),
+        "not_probed": len(probeable) - len(probed),
+        "reclassified": len(moved),
+        "no_task_message": no_message,
+        "unreadable": unreadable,
+    }
+    return [c for c in candidates if c.get("id") not in moved], machine, report
+
+
 def check_lines(thread_ids: list[str], window: tuple[datetime, datetime]) -> list[str]:
     """逐条报告线程的 CST 开始时间与窗口归属（供 collector 批量复核）。"""
     start, end = window
@@ -202,18 +322,22 @@ def main():
         target_workday = choose_target_workday(datetime.now(CST))
     window = workday_window(target_workday)
 
-    if args.filter:
+    if args.filter or args.probe:
         # 从 stdin 读 nmem threads list --json 输出，按 UUID v7 窗口过滤并分类机器会话
-        data = json.load(sys.stdin)
-        threads = data.get("threads", data) if isinstance(data, dict) else data
+        threads = read_threads()
         candidates, machine, excluded = partition_threads(threads, window)
-        output = {
+        output: dict[str, object] = {
             "date": target_workday.isoformat(),
             "total": len(threads),
             "candidates": candidates,
             "machine": machine,
             "excluded": excluded,
         }
+        if args.probe:
+            candidates, machine, probe_report = probe_candidates(candidates, machine, args.probe_limit)
+            output["candidates"] = candidates
+            output["machine"] = machine
+            output["probe"] = probe_report
         print(json.dumps(output, ensure_ascii=False, indent=2))
     elif args.check:
         thread_ids = [line.strip() for line in sys.stdin if line.strip()]

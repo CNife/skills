@@ -14,6 +14,8 @@
 
 由 agent 工具链自动产生、不代表人的直接工作产出的会话：advisor 镜像（标题以 `### Session update` 开头）、子代理任务会话、上一次 recap 自身及其收集/核验子代。整理日报时默认跳过；**跳过必须留痕**--归类审查消息里注明数量，用户可点名捞回。
 
+判族两条路：标题族（脚本 `MACHINE_TITLE_FAMILIES`）与首条消息族（脚本 `MACHINE_MESSAGE_FAMILIES`）。父会话派发的子代理与 recap 子代常带友好标题（如「为 18 个 UP 主打标并生成 out/tags/part07.json」），标题族认不出，只能取首条 user 消息判族--即列表时的 `--probe`。
+
 ### nmem
 
 会话的 source of truth。存储两类数据：
