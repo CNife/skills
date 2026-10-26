@@ -17,7 +17,8 @@ utility/               通用工具（与代理无关）
 └── yadm/                个人 dotfiles 管理
 
 methodology/         方法论（组合并强化 agent 工作方式的技能）
-└── grill-for-unknowns/  用拷问的方式对齐未知
+├── grill-for-unknowns/  用拷问的方式对齐未知
+└── skill-design/        写或改技能：判 agent 缺什么，定每类技能的正文重点
 
 .archive/            不再维护的历史技能
 ```
@@ -56,6 +57,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 | Skill | 描述 |
 |-------|------|
 | [grill-for-unknowns](./methodology/grill-for-unknowns) | 用户主动调用的 `grill-with-docs` 强化版：核对领土，用四类未知事项探索战争迷雾，并按需调用 `prototype` 或 `research` |
+| [skill-design](./methodology/skill-design) | 写或改技能：按 agent 缺什么判类型，按每类重点定正文该写什么；写作规范交给 writing-for-agents |
 
 ## 开发
 
