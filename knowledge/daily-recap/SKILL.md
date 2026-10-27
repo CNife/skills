@@ -18,33 +18,21 @@ disable-model-invocation: true
 
 **确定目标工作日**：工作日窗口以 CST 04:00 为界 [工作日 04:00, 次日 04:00)，凌晨 00:00-04:00 的会话归前一工作日。"总结哪个工作日"以 12:00 为界（<12:00 昨天 / ≥12:00 今天），由脚本按 recap 时刻自动选择。
 
-```bash
-cd <skill目录> && uv run --script scripts/extract_today.py
-```
-
-拿到 `date` 后回显一行：「整理目标工作日：{date}（脚本自动选择，改期用 `--date`）」。整理历史日期才显式传 `--date YYYY-MM-DD`。
-
 **列举候选**（nmem 是唯一来源）：
 
 ```bash
-nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py --probe
+cd <skill目录> && uv run --script scripts/extract_today.py --scan
 ```
 
-脚本按 UUID v7 时间戳（线程 id 前 48 位 = 会话开始时间毫秒戳，见 GLOSSARY.md「线程 ID 时间戳」）把线程分成三组：
+脚本扫完全库线程（8600 条约 44 页 / 25 秒；列表排序既非会话时间序也非严格导入序，提前停页必漏），输出目标工作日、扫描页数、**候选表**（序号 / 消息数 / 会话主题 / thread_id）、机器会话跳过计数、stub 聚合行、时间未知与读取失败留痕。回显「整理目标工作日：{date}」；整理历史日期加 `--date YYYY-MM-DD`。
 
-- `candidates`：窗口内非机器线程——进入归类审查
-- `machine`：窗口内机器会话，按族分组（`advisor` advisor 镜像 / `subagent` 子代理任务 / `recap` 上一轮 recap 自身及子代）——默认跳过，**跳过必留痕**：归类审查消息里带一行计数备注（如「另跳过 31 条机器会话：advisor×16、子代理×12、上轮 recap×3」）；用户点名可捞回
-- `excluded`：窗口外线程——不处理
+- 时间判定链：id 里的 UUID v7 毫秒戳 → id 内嵌日期时刻 → 消息 `timestamp` →（都判不出时）只排除 `created_at` 能证明早于窗口的线程，其余单列留痕。不因解析失败丢线程
+- 机器会话（advisor 镜像 / 子代理 / 上一轮 recap / no-mistakes 流水线阶段）按标题族 + 首条消息族判出并计数跳过，用户点名可捞回；消息数 <10 的 stub 聚合成一行。判族规则在脚本里维护，新形态照常进候选，确认后补进脚本
+- 留痕原则：窗口内每个线程要么进候选表、要么在备注里有据可查
 
-`--probe` = `--filter` + 对标题族认不出的候选取首条 user 消息复核机器族：父会话派发的子代理与 recap 子代常带友好标题（如「为 18 个 UP 主打标并生成 out/tags/part07.json」），与人类标题无从区分，只看标题必漏。每条候选一次 `nmem threads show` 调用，故默认上限 60 条（`--probe-limit`），输出 `probe` 字段留痕：`reclassified` / `no_task_message`（首条消息里没有任务提示，人类会话的正常形态）/ `unreadable` / `not_probed`。候选规模远超上限时退回 `--filter`，靠归类审查人工辨认。机器判族规则在脚本里维护；新形态的机器会话照常进候选，确认后补进脚本。
+**空集**：候选表为空时告知「目标工作日没有会话记录」并终止。不得用「当前会话应在窗口内」反证——12:00 前跑 recap 时目标工作日是昨天，当前会话必然在窗口外，反证前提恒不成立。
 
-**分页**：`nmem threads list` 排序不是严格日期序（按导入批次混杂），`--offset` 递增翻页，每页管道 `--probe`，直到连续多页无窗口内候选才停；翻页范围在归类审查消息里一行带过。
-
-**其余过滤**：消息数 <10 的候选多为测试探针，聚合成一行备注（数量 + 特征），不逐条进表。**留痕原则**：窗口内每个线程要么进候选表、要么在备注里有据可查——包括机器会话与 stub，不允许静默消失。
-
-**空集**：candidates 为空时告知「目标工作日没有会话记录」并终止。不得用「当前会话应在窗口内」反证——12:00 前跑 recap 时目标工作日是昨天，当前会话必然在窗口外，反证前提恒不成立。
-
-**降级**：nmem CLI 连接失败/超时（退出码非 0，stderr 报 connecting/timeout）→ Hard stop，见 `references/recovery-guide.md`。
+**降级**：nmem CLI 连接失败/超时（退出码非 0，stderr 报 connecting/timeout）→ Hard stop，见 `references/recovery-guide.md`。`nmem threads show` 批量超时时加 `--no-probe`，只按标题族分类。
 
 ### 2. 归类审查（HITL · 唯一人工门）
 
@@ -63,7 +51,7 @@ nmem threads list --limit 200 --json | uv run --script scripts/extract_today.py 
 
 #### 3a. 扇出 recap-collector 收集事件
 
-批准后**按主题域**扇出（一个主题域一个 collector，包揽该主题下所有会话；主题域超过 6 个也先全部收集——合并发生在 3b，不预先砍）。collector 读 nmem 线程，蒸馏成**事件**（选骨架、填字段、带来源指针），返回结构化文本证据包。写入由主 agent 独占。
+批准后**按主题域**扇出（一个主题域一个 collector，包揽该主题下所有会话；主题域超过 6 个也先全部收集——合并发生在 3b，不预先砍）。**同时运行不超过 3 个 collector**：每个 collector 最多 2 个并发 nmem 调用，再翻倍会压垮 nmem 造成成片超时。collector 读 nmem 线程，蒸馏成**事件**（选骨架、填字段、带来源指针），返回结构化文本证据包。写入由主 agent 独占。
 
 > collector 的角色、统一接口与降级策略见 `agents/recap-collector.md`；task 按 `references/collector-task-template.md` 填充（主题域 / 目标工作日 / 技能目录 / 会话清单 / 重点核实项，**不传去向**）。
 

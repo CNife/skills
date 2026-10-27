@@ -20,7 +20,7 @@ extend-exclude = [".archive"]
 extend-select = ["RUF"]
 
 # 中文注释、docstring、help 文本大量使用全角标点：不列白名单时全仓库会产生
-# 110 条 RUF001-003 告警。列出的符号即可在文本中出现的字符。
+# 110 条 RUF001-003 告警。列出的符号即可在文本中出现的字符（× 用于机器会话计数，如 advisor×16）。
 allowed-confusables = [
   "，",
   "。",
@@ -37,6 +37,7 @@ allowed-confusables = [
   "、",
   "「",
   "」",
+  "×",
 ]
 
 [format]
