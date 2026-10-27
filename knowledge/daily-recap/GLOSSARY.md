@@ -12,9 +12,9 @@
 
 ### 机器会话（Machine Session）
 
-由 agent 工具链自动产生、不代表人的直接工作产出的会话：advisor 镜像（标题以 `### Session update` 开头）、子代理任务会话、上一次 recap 自身及其收集/核验子代。整理日报时默认跳过；**跳过必须留痕**--归类审查消息里注明数量，用户可点名捞回。
+由 agent 工具链自动产生、不代表人的直接工作产出的会话：advisor 镜像（标题以 `### Session update` 开头）、子代理任务会话、no-mistakes 流水线的阶段子代、上一次 recap 自身及其收集/核验子代。整理日报时默认跳过；**跳过必须留痕**--归类审查消息里注明数量，用户可点名捞回。
 
-判族两条路：标题族（脚本 `MACHINE_TITLE_FAMILIES`）与首条消息族（脚本 `MACHINE_MESSAGE_FAMILIES`）。父会话派发的子代理与 recap 子代常带友好标题（如「为 18 个 UP 主打标并生成 out/tags/part07.json」），标题族认不出，只能取首条 user 消息判族--即列表时的 `--probe`。
+判族两条路：标题族（脚本 `MACHINE_TITLE_FAMILIES`）与首条消息族（脚本 `MACHINE_MESSAGE_FAMILIES`）。父会话派发的子代理、流水线阶段与 recap 子代常带友好标题（如「为 18 个 UP 主打标并生成 out/tags/part07.json」），标题族认不出，只能取首条 user 消息判族。
 
 ### nmem
 
@@ -25,12 +25,17 @@
 
 ### 线程 ID 时间戳（UUID v7）
 
-Pi 和 OMP 的线程 ID 均为 UUID v7（如 `omp-019fd628-514d-7000-88be-e0591fac251c`）。前 48 位编码会话开始时间的毫秒级 Unix 时间戳，可从 `threads list` 的 `id` 字段直接解析，无需 REST 调用。
+Pi 和 OMP 的线程 ID 多为 UUID v7（如 `omp-019fd628-514d-7000-88be-e0591fac251c`）。前 48 位编码会话开始时间的毫秒级 Unix 时间戳，可从 `threads list` 的 `id` 字段直接解析，无需 REST 调用。
 
 - 编码的是**会话开始时间**（会话 UUID 生成时刻），不是 nmem 导入时间
 - 毫秒精度，可直接判断 04:00 CST 窗口边界
 - 对 `nmem t sync` 导入的旧会话同样准确（UUID 不因导入而改变）
 - 已用 OMP 磁盘文件名时间戳交叉验证：毫秒级完全一致
+- 前缀不固定（`pi-`/`omp-`/`grok-`…），按 UUID v7 形状在 id 里查找，不能只剥 `pi-`/`omp-` 再取前 12 位
+
+**id 判不出时**：先看消息级 `timestamp`（毫秒精度，如 deepseek-harness 线程的 id 完全不带时间，只有消息带），再退到 `created_at` 保守排除。
+
+**非 UUID v7 的 id**：nmem 里还有自带日期时刻的 id--`import-YYYYMMDDhhmmss-<hex>`（历史导入）、`YYYYMMDD_hhmmss_<hex>`（pi 早期）、`cron_<hex>_YYYYMMDD_hhmmss`（定时任务），按 CST 解析后同样能精确判窗口。两者都判不出时，用 `created_at` 做保守排除：`created_at` 是导入批次日级日期，实测比会话开始最多晚 52 天、最早早 1 天，所以只有 `created_at + 1 天` 仍早于窗口当日才算证明在窗口外，其余的进候选留痕而不是丢弃。
 
 ### 自动蒸馏记忆（Auto-distilled Memory）
 
@@ -53,7 +58,7 @@ nmem 从会话中自动提取的语义事实。局限性：
 
 ### 时间窗口
 
-CST [工作日 04:00, 次日 04:00)。凌晨 00:00-04:00 的会话归前一工作日。用线程 ID 的 UUID v7 时间戳（毫秒精度）直接判断窗口归属，无需 REST 调用。
+CST [工作日 04:00, 次日 04:00)。凌晨 00:00-04:00 的会话归前一工作日。窗口归属由线程开始时间判断，判定顺序见「线程 ID 时间戳」，全程不用 REST。
 
 ### 事件（Event）
 
