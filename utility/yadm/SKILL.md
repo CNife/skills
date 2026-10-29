@@ -45,6 +45,16 @@ disable-model-invocation: true
 
 条件越多越容易改变候选得分；只添加表达真实差异所需的条件。模板优先于符号链接候选，`yadm.alt-copy=true` 和模板处理都可能覆盖普通目标；执行 `yadm alt` 或触发自动 alt 前检查目标及相关配置。
 
+## 移出追踪与忽略本机变更
+
+“本机不跟随某条受管路径”有三种互不等价的表达，先按目标选：
+
+1. `yadm update-index --skip-worktree -- <path>`：保留追踪与本机内容，本机忽略后续改动；pull 不覆盖该文件，也不需要 `.gitignore`。这是“本机暂时不跟随”的默认手段。
+2. `yadm rm --cached -- <path>`，并在仓库 `.gitignore` 登记该路径：彻底脱离追踪并保留本机文件。工作树是 `$HOME`，未跟踪文件数量巨大且默认状态看不见；不登记 `.gitignore` 时，防止重新纳入只能靠限定 add 范围（`yadm add -u` 或显式路径），不用 `add .`、`add -A`。
+3. `##default` 与 `##hostname.*`/`##distro.*` alternates：本来就该按机器分裂的配置，用变体表达，不停止追踪。
+
+`rm --cached` 生成的是删除提交，推送后对其他机器的后果是确定的：没有本地改动的机器 pull 时同名文件被删除，有本地改动的机器 pull 直接中止。用户要“先把当前版本同步到所有机器，再忽略变更”时，分两次提交：先提交内容并推送，等各机 pull 到位，再提交移出追踪。
+
 ## 配置边界
 
 - `yadm config yadm.*` 管理 yadm 配置文件。
@@ -76,6 +86,7 @@ disable-model-invocation: true
 - `yadm init -f`、`yadm clone -f`：会删除现有仓库，并可能强制解除子模块。
 - `yadm decrypt`：会覆盖工作树中的同名文件；先运行 `yadm decrypt -l` 查看清单。
 - `reset --hard`、可能覆盖文件的 `checkout`/`restore`，以及任何作用于整个工作树的恢复操作。
+- 把受管文件移出追踪，或删除受管文件：推送后其他机器 pull 时会删掉本地同名文件，本地有改动时 pull 中止；先按「移出追踪与忽略本机变更」确认顺序。
 - 重设 transcrypt、迁移加密体系、读取或输出机密内容。
 - 未检查的 bootstrap、template 或 `alt-copy` 覆盖。
 
@@ -88,7 +99,7 @@ disable-model-invocation: true
 3. 用目标路径限定 `yadm status`、`yadm diff --stat`、`yadm diff --name-status` 和 `yadm add`，不卷入无关改动。
 4. 暂存后用 `yadm diff --cached --stat` 和 `yadm diff --cached --name-status` 再次核对范围；机密文件按上节验证属性和 transcrypt 状态，不输出内容 diff。
 5. 运行能直接覆盖配置行为的检查或实际命令。没有适合的运行验证时，说明限制，不用“看起来正确”代替证据。
-6. 使用简短的一行中文提交信息，运行 `yadm commit -- <paths>`（按已暂存内容提交），随后 `yadm push origin main`。
+6. 使用简短的一行中文提交信息提交：普通修改用 `yadm commit -m "<msg>" -- <paths>`；用 `rm --cached` 移出追踪后该路径已不在索引，pathspec 会退化成空提交，改用不带 pathspec 的 `yadm commit -m "<msg>"`（范围已由第 4 步的 `--cached` 核对保证）。提交为 0 条改动即说明 pathspec 或暂存状态有问题，先查 `yadm status`，不要重试同一条命令。随后 `yadm push origin main`。
 7. 推送因远端分歧失败时保留现场并报告；不要自行 pull、rebase、reset 或强推。
 
 行为无法解释时，以当前安装的 yadm、`yadm help` 和 [yadm 官方源码](https://github.com/yadm-dev/yadm) 为准。
