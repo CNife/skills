@@ -102,4 +102,13 @@ disable-model-invocation: true
 6. 使用简短的一行中文提交信息提交：普通修改用 `yadm commit -m "<msg>" -- <paths>`；用 `rm --cached` 移出追踪后该路径已不在索引，pathspec 会退化成空提交，改用不带 pathspec 的 `yadm commit -m "<msg>"`（范围已由第 4 步的 `--cached` 核对保证）。提交为 0 条改动即说明 pathspec 或暂存状态有问题，先查 `yadm status`，不要重试同一条命令。随后 `yadm push origin main`。
 7. 推送因远端分歧失败时保留现场并报告；不要自行 pull、rebase、reset 或强推。
 
+## 跨机核对
+
+“别的机器改了什么、这台要补什么”不是本机自检，按提交内容判断：
+
+1. `yadm fetch origin`，再看 `yadm log --stat --oneline origin/main -20`；改到的路径带 `##hostname.*`/`##distro.*` 后缀时，落点机器由后缀给出。
+2. 不会随仓库到达本机的三样：`local.*`（class/os/distro 覆盖，从不同步）、transcrypt 凭据、只存在于单台机器的未跟踪文件。
+3. pull 后跑 `yadm status`：出现 `T` 说明本机该路径与 HEAD 类型不同（blob 与符号链接互换），按 Alternates 一节处理。
+4. obelisk 只有本机会话记录；其他机器上做过什么只能从提交内容和 alternates 后缀推断，不在本机历史里。
+
 行为无法解释时，以当前安装的 yadm、`yadm help` 和 [yadm 官方源码](https://github.com/yadm-dev/yadm) 为准。
