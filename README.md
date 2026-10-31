@@ -11,6 +11,7 @@ knowledge/           个人知识系统
 utility/               通用工具（与代理无关）
 ├── local-github/        ~/github 参考库：克隆、同步与本地路径查询
 ├── models-dev-query/    AI 模型规格查询
+├── new-workspace/       新建本地工作区：问明目标与位置，搭好 Git、README/AGENTS、工程技能配置并验收
 ├── plain-speak/         重讲一遍：把整件事重新讲清楚，并把自造黑话换成项目术语、行业标准术语或日常词汇
 ├── treehouse/           Git worktree 池管理
 ├── tern-guide/          Tern 终端：pane/block 编排、配置与文档导航
@@ -47,6 +48,7 @@ skill-manager --global sync                          # 同步到 ~/.agents/skill
 |-------|------|
 | [local-github](./utility/local-github) | 查 GitHub 代码时先克隆到 ~/github 参考库再本地读，不用 curl 抓远端文件；并管理该参考库（clone / sync / ensure / path / list / rename） |
 | [models-dev-query](./utility/models-dev-query) | 查询 models.dev 数据库 - 模型规格、定价、上下文限制、提供商 API 端点 |
+| [new-workspace](./utility/new-workspace) | 新建本地工作区：问明目标与位置，搭好 Git、README/AGENTS、工程技能配置并验收 |
 | [plain-speak](./utility/plain-speak) | 对话中 Agent 冒出自造黑话、或用户表示没看懂时调用——把整件事重新讲清楚，并把自造黑话换成项目术语、行业标准术语或日常词汇 |
 | [treehouse](./utility/treehouse) | 教 Agent 使用 Treehouse CLI 获取、租用和归还 worktree |
 | [tern-guide](./utility/tern-guide) | 教 Agent 操作 Tern 终端：pane/block/host 编排、把命令开在可见窗格、配置与按需查文档 |
