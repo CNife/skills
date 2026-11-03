@@ -51,13 +51,14 @@ cd <skill目录> && uv run --script scripts/extract_today.py --scan
 
 #### 3a. 扇出 recap-collector 收集事件
 
-批准后**按主题域**扇出（一个主题域一个 collector，包揽该主题下所有会话；主题域超过 6 个也先全部收集——合并发生在 3b，不预先砍）。**同时运行不超过 3 个 collector**：每个 collector 最多 2 个并发 nmem 调用，再翻倍会压垮 nmem 造成成片超时。collector 读 nmem 线程，蒸馏成**事件**（选骨架、填字段、带来源指针），返回结构化文本证据包。写入由主 agent 独占。
+批准后**按主题域**扇出（一个主题域一个 collector，包揽该主题下所有会话；主题域超过 6 个也先全部收集——合并发生在 3b，不预先砍）。**按体量降序派发**，长杆先跑：线程 >8 条或消息 >1500 条的主题域拆成多个 collector（两条 >500 条消息的线程不放进同一个）。**同时运行最多 6 个 collector**：每个 collector 最多 2 个并发 nmem 调用（实测 nmem 单次读取约 0.3 s，6 个 collector 同跑无一次 nmem 超时——分片失败几乎都来自模型侧断连）。collector 用 `scripts/thread_digest.py` 一条命令读一条线程，蒸馏成**事件**（选骨架、填字段、带来源指针），返回结构化文本证据包。写入由主 agent 独占。
 
-> collector 的角色、统一接口与降级策略见 `agents/recap-collector.md`；task 按 `references/collector-task-template.md` 填充（主题域 / 目标工作日 / 技能目录 / 会话清单 / 重点核实项，**不传去向**）。
+> collector 的角色、统一接口与降级策略见 `agents/recap-collector.md`；task 按 `references/collector-task-template.md` 填充（主题域 / 目标工作日 / 技能目录 / 会话清单 / 部分证据文件 / 重点核实项，**不传去向**）。
 
 **异常处置**（不静默、不硬写、不打断）：
 
 - collector 发现窗口外线程或读取失败：跳过并记入「遗留」清单
+- collector 中断（连接断开、输出损坏）：先读它的部分证据文件续上，只对缺失线程重派，不整轮重跑
 - 会话未完成但内容有效（如 CI 修复在结论落地前截断）：标注「未完成」，只写已确认的部分，不把未验证的意图写成既成事实
 - 某批准主题域整体无法落地：写入报告里点名，补不补由用户决定
 
