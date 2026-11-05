@@ -12,6 +12,18 @@ disable-model-invocation: true
 
 流程：选日 + 列举候选 → **归类审查（唯一人工门）** → 收集 + 聚合 → 条件核验（静默）→ 写入 + 一行报告。执行期保持安静，只在归类审查和写入报告两处出声。
 
+## 运行时
+
+本技能在 omp 与 DSH（DeepSeek Harness / DS Bot）下都能跑，差异只在扇出子代理和写文件：
+
+| 环节 | omp | DSH |
+|---|---|---|
+| 收集扇出 | `agent: recap-collector` + `task`（按模板填充） | `subagent` 工具，prompt = `agents/recap-collector.md` 正文 + 按模板填好的任务；一个主题域一个，最多 6 个并发 |
+| 核验扇出 | `agent: reviewer` + `task` | `subagent` 工具，prompt = 证据包原文 + 待核验 bullet 清单 |
+| 写入 | edit / patch | `edit` |
+
+DSH 侧本技能带 `disable-model-invocation: true`，不进模型技能目录，**直接 read 本 SKILL.md 按流程执行**即可。
+
 ## 流程
 
 ### 1. 选日 + 列举候选
@@ -47,6 +59,8 @@ cd <skill目录> && uv run --script scripts/extract_today.py --scan
 
 呈现给用户确认——**这是全程唯一的人工交互**。用户修正去向或标记跳过后，仅批准的条目进入下一步。
 
+**AFK 运行**（定时任务、无人在场）：跳过等待，按同一套规则自动定去向；拿不准的一律判「不记录」，并把候选序号、标题和「为什么拿不准」列进收尾报告，用户看到后一句话即可补写——不因无人确认而卡住整轮。
+
 ### 3. 收集 + 聚合
 
 #### 3a. 扇出 recap-collector 收集事件
@@ -54,6 +68,8 @@ cd <skill目录> && uv run --script scripts/extract_today.py --scan
 批准后**按主题域**扇出（一个主题域一个 collector，包揽该主题下所有会话；主题域超过 6 个也先全部收集——合并发生在 3b，不预先砍）。**按体量降序派发**，长杆先跑：线程 >8 条或消息 >1500 条的主题域拆成多个 collector（两条 >500 条消息的线程不放进同一个）。**同时运行最多 6 个 collector**：每个 collector 最多 2 个并发 nmem 调用（实测 nmem 单次读取约 0.3 s，6 个 collector 同跑无一次 nmem 超时——分片失败几乎都来自模型侧断连）。collector 用 `scripts/thread_digest.py` 一条命令读一条线程，蒸馏成**事件**（选骨架、填字段、带来源指针），返回结构化文本证据包。写入由主 agent 独占。
 
 > collector 的角色、统一接口与降级策略见 `agents/recap-collector.md`；task 按 `references/collector-task-template.md` 填充（主题域 / 目标工作日 / 技能目录 / 会话清单 / 部分证据文件 / 重点核实项，**不传去向**）。
+>
+> 扇出方式按运行时分叉：omp 用 `agent: recap-collector` + `task`；DSH 用 `subagent` 工具，prompt = 上述角色文件正文 + 填好的任务（见「运行时」）。
 
 **异常处置**（不静默、不硬写、不打断）：
 
@@ -104,7 +120,7 @@ collector 返回的**事件**（非会话摘要）是输入。对批准条目做
 
 对**数据密集 bullet** 扇出核验 subagent：对着证据包原文逐条核对数字、百分比、公式、口径；纯定性 bullet 跳过。
 
-- `agent: reviewer`；task = 证据包原文 + 待核验 bullet 清单（每条含声称的数字和来源出处）
+- 核验子代理：omp 用 `agent: reviewer` + `task`，DSH 用 `subagent` 工具；task/prompt = 证据包原文 + 待核验 bullet 清单（每条含声称的数字和来源出处）
 - 核验报告逐条给出结论（一致 / 修正为 X，依据来源 Y）
 - 不一致 → **按来源静默修正**（数字、口径以来源为准），修正处数记入写入报告；来源无法裁决的条目从终稿剔除并记入报告。**不打断用户。**
 
@@ -120,7 +136,7 @@ cd <skill目录> && uv run --script scripts/obsidian-helper.py --vault <work|per
 
 输出 DIARY_PATH/DATE、RECENT（近期 2-3 篇日记，了解写作风格）、TODAY（今日日记全文；不存在时自动从模板创建）。**始终传 `--date`**（用第 1 步的目标工作日）。首次配置：`CONFIG_MISSING=true` 时按打印的示例创建 `~/.config/cnife-skills/obsidian-diary.json`，询问用户 vault 根目录后填入，重新运行脚本。
 
-**补全式整合写入**：先读后写，基于 TODAY 全文补全不覆盖——已有章节末尾追加 bullet，不重写已有内容；新章节插到已有章节之后，按重要性排序；用 Edit（patch）工具写入。
+**补全式整合写入**：先读后写，基于 TODAY 全文补全不覆盖——已有章节末尾追加 bullet，不重写已有内容；新章节插到已有章节之后，按重要性排序；用编辑工具写入（omp: edit/patch，DSH: `edit`）。
 
 **一行报告**（就此收尾，不再请用户读终稿）：「已写入 {变体} 日记（{date}）」；有核验修正或遗留项时追加一句（如「核验修正 2 处」「遗留：1 条读取失败未纳入」）。准确性兜底 = 来源可追溯 + 静默核验 + 用户日常浏览时顺手改。
 
