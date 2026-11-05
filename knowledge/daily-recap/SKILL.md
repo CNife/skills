@@ -18,13 +18,13 @@ disable-model-invocation: true
 
 | 环节 | omp | DSH Main Bot | DS Bot 的 Bot |
 |---|---|---|---|
-| 收集扇出 | `agent: recap-collector` + `task`（按模板填充） | `subagent` 工具，prompt = `agents/recap-collector.md` 正文 + 填好的任务 | **不能起子代理**：用 `message_bot` 并行派给专门的收集员 Bot（Sift/Sieve/Glean），一轮里全部发出，证据包回到派活方 |
-| 核验扇出 | `agent: reviewer` + `task` | `subagent` 工具 | 无子代理：逐条回读证据包原文比对，修正处数记入报告 |
+| 收集 | `agent: recap-collector` + `task`（按模板填充） | `subagent` 工具，prompt = `agents/recap-collector.md` 正文 + 填好的任务 | **不能起子代理**：单 Bot 自己做，但把读线程那一段放进一条 shell 命令并行跑（`thread_digest.py` 多次调用 `&` + `wait`，限 6 并发），再按主题域批量归纳（一个域一次 pass，不是一条线程一次） |
+| 核验 | `agent: reviewer` + `task` | `subagent` 工具 | 无子代理：逐条回读证据包原文比对，修正处数记入报告 |
 | 写入 | edit / patch | `edit` | `edit` |
 
 DSH 侧本技能带 `disable-model-invocation: true`，不进模型技能目录，**直接 read 本 SKILL.md 按流程执行**即可。
 
-DS Bot 的 Bot 不能起子代理是设计约束（`ds-bot/src/host/tools.js` 把 `subagent`、`workflow` 从 Bot 的工具装配里摘掉）。并行度来自 Bot 数量：收集员各自开工，结果用 `message_bot` 回到派活方。
+DS Bot 的 Bot 不能起子代理是设计约束（`ds-bot/src/host/tools.js` 把 `subagent`、`workflow` 从 Bot 的工具装配里摘掉）。但**不要为此多建 Bot 当分片**：那些 Bot 没有独立角色和记忆价值，却带来派活、收回、超时兜底一整套跨会话状态。定时任务不赶时间，串行加上 shell 并行足够；真要并行收益，先看 nmem 取数是否真的是瓶颈（实测 30 条线程取数约 1 分钟，瓶颈在归纳不在 I/O）。
 
 ## 流程
 
@@ -69,9 +69,11 @@ cd <skill目录> && uv run --script scripts/extract_today.py --scan
 
 批准后**按主题域**扇出（一个主题域一个 collector，包揽该主题下所有会话；主题域超过 6 个也先全部收集——合并发生在 3b，不预先砍）。**按体量降序派发**，长杆先跑：线程 >8 条或消息 >1500 条的主题域拆成多个 collector（两条 >500 条消息的线程不放进同一个）。**同时运行最多 6 个 collector**：每个 collector 最多 2 个并发 nmem 调用（实测 nmem 单次读取约 0.3 s，6 个 collector 同跑无一次 nmem 超时——分片失败几乎都来自模型侧断连）。collector 用 `scripts/thread_digest.py` 一条命令读一条线程，蒸馏成**事件**（选骨架、填字段、带来源指针），返回结构化文本证据包。写入由主 agent 独占。
 
+> DS Bot 的 Bot 没有子代理：把「读线程」这一段并行放进一条 shell 命令（多次 `thread_digest.py` 用 `&` + `wait`，限 6 并发），再按主题域逐域归纳；不要为并行另建 Bot。
+
 > collector 的角色、统一接口与降级策略见 `agents/recap-collector.md`；task 按 `references/collector-task-template.md` 填充（主题域 / 目标工作日 / 技能目录 / 会话清单 / 部分证据文件 / 重点核实项，**不传去向**）。
 >
-> 扇出方式按运行时分叉：omp 用 `agent: recap-collector` + `task`；DSH Main Bot 用 `subagent` 工具（prompt = 上述角色文件正文 + 填好的任务）；DS Bot 的 Bot 没有子代理，改用 `message_bot` 并行派给收集员 Bot（见「运行时」）。
+> 扇出方式按运行时分叉：omp 用 `agent: recap-collector` + `task`；DSH Main Bot 用 `subagent` 工具（prompt = 上述角色文件正文 + 填好的任务）；DS Bot 的 Bot 没有子代理，自己在一条 shell 命令里并行读线程、按主题域顺序归纳（见「运行时」），不为并行另建 Bot。
 
 **异常处置**（不静默、不硬写、不打断）：
 
