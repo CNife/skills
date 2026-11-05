@@ -16,13 +16,15 @@ disable-model-invocation: true
 
 本技能在 omp 与 DSH（DeepSeek Harness / DS Bot）下都能跑，差异只在扇出子代理和写文件：
 
-| 环节 | omp | DSH |
-|---|---|---|
-| 收集扇出 | `agent: recap-collector` + `task`（按模板填充） | `subagent` 工具，prompt = `agents/recap-collector.md` 正文 + 按模板填好的任务；一个主题域一个，最多 6 个并发 |
-| 核验扇出 | `agent: reviewer` + `task` | `subagent` 工具，prompt = 证据包原文 + 待核验 bullet 清单 |
-| 写入 | edit / patch | `edit` |
+| 环节 | omp | DSH Main Bot | DS Bot 的 Bot |
+|---|---|---|---|
+| 收集扇出 | `agent: recap-collector` + `task`（按模板填充） | `subagent` 工具，prompt = `agents/recap-collector.md` 正文 + 填好的任务 | **不能起子代理**：用 `message_bot` 并行派给专门的收集员 Bot（Sift/Sieve/Glean），一轮里全部发出，证据包回到派活方 |
+| 核验扇出 | `agent: reviewer` + `task` | `subagent` 工具 | 无子代理：逐条回读证据包原文比对，修正处数记入报告 |
+| 写入 | edit / patch | `edit` | `edit` |
 
 DSH 侧本技能带 `disable-model-invocation: true`，不进模型技能目录，**直接 read 本 SKILL.md 按流程执行**即可。
+
+DS Bot 的 Bot 不能起子代理是设计约束（`ds-bot/src/host/tools.js` 把 `subagent`、`workflow` 从 Bot 的工具装配里摘掉）。并行度来自 Bot 数量：收集员各自开工，结果用 `message_bot` 回到派活方。
 
 ## 流程
 
@@ -69,7 +71,7 @@ cd <skill目录> && uv run --script scripts/extract_today.py --scan
 
 > collector 的角色、统一接口与降级策略见 `agents/recap-collector.md`；task 按 `references/collector-task-template.md` 填充（主题域 / 目标工作日 / 技能目录 / 会话清单 / 部分证据文件 / 重点核实项，**不传去向**）。
 >
-> 扇出方式按运行时分叉：omp 用 `agent: recap-collector` + `task`；DSH 用 `subagent` 工具，prompt = 上述角色文件正文 + 填好的任务（见「运行时」）。
+> 扇出方式按运行时分叉：omp 用 `agent: recap-collector` + `task`；DSH Main Bot 用 `subagent` 工具（prompt = 上述角色文件正文 + 填好的任务）；DS Bot 的 Bot 没有子代理，改用 `message_bot` 并行派给收集员 Bot（见「运行时」）。
 
 **异常处置**（不静默、不硬写、不打断）：
 
@@ -120,7 +122,7 @@ collector 返回的**事件**（非会话摘要）是输入。对批准条目做
 
 对**数据密集 bullet** 扇出核验 subagent：对着证据包原文逐条核对数字、百分比、公式、口径；纯定性 bullet 跳过。
 
-- 核验子代理：omp 用 `agent: reviewer` + `task`，DSH 用 `subagent` 工具；task/prompt = 证据包原文 + 待核验 bullet 清单（每条含声称的数字和来源出处）
+- 核验子代理：omp 用 `agent: reviewer` + `task`，DSH Main Bot 用 `subagent` 工具；无子代理的 Bot 改为自己逐条回读证据包原文比对。task/prompt = 证据包原文 + 待核验 bullet 清单（每条含声称的数字和来源出处）
 - 核验报告逐条给出结论（一致 / 修正为 X，依据来源 Y）
 - 不一致 → **按来源静默修正**（数字、口径以来源为准），修正处数记入写入报告；来源无法裁决的条目从终稿剔除并记入报告。**不打断用户。**
 
