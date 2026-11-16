@@ -349,9 +349,9 @@ def test_first_message_family(content, family):
 
 
 class _FakeCompleted:
-    def __init__(self, stdout: str = "", returncode: int = 0):
+    def __init__(self, stdout: str = "", returncode: int = 0, stderr: str = ""):
         self.stdout = stdout
-        self.stderr = ""
+        self.stderr = stderr
         self.returncode = returncode
 
 
@@ -490,8 +490,73 @@ def test_fetch_threads_page_fails_loud(monkeypatch, outcome):
         return _FakeCompleted("" if outcome == "nonzero" else "not json", returncode=0 if outcome == "bad_json" else 1)
 
     monkeypatch.setattr(extract_today.subprocess, "run", fake_run)
+    monkeypatch.setattr(extract_today.time, "sleep", lambda seconds: None)
     with pytest.raises(RuntimeError):
         extract_today.scan_threads()
+
+
+def test_fetch_threads_page_retries_transient_errors(monkeypatch, capsys):
+    """前两次瞬时网络错误、第三次成功：返回该页，并逐次记一行重试日志。"""
+    calls: list[int] = []
+    sleeps: list[float] = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(1)
+        if len(calls) <= 2:
+            return _FakeCompleted("", returncode=1, stderr=f"error sending request for url (offset {len(calls)})")
+        return _FakeCompleted(json.dumps({"threads": [{"id": "omp-x"}]}))
+
+    monkeypatch.setattr(extract_today.subprocess, "run", fake_run)
+    monkeypatch.setattr(extract_today.time, "sleep", sleeps.append)
+
+    assert extract_today.fetch_threads_page(400) == [{"id": "omp-x"}]
+    assert len(calls) == 3
+    assert len(sleeps) == 2
+    assert all(3.0 <= delay <= 5.0 for delay in sleeps)
+    err = capsys.readouterr().err
+    assert err.count("瞬时错误") == 2
+    assert "第 1/3 次" in err and "第 2/3 次" in err
+    assert "offset 400" in err
+
+
+def test_fetch_threads_page_gives_up_after_three_transient_errors(monkeypatch, capsys):
+    """三次都是瞬时错误：抛 RuntimeError，文案带 offset 与最后一次原因。"""
+    calls: list[int] = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(1)
+        return _FakeCompleted("", returncode=1, stderr="connecting to nmem.cnife.cn:443 failed: tls handshake eof")
+
+    monkeypatch.setattr(extract_today.subprocess, "run", fake_run)
+    monkeypatch.setattr(extract_today.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        extract_today.fetch_threads_page(600)
+    message = str(excinfo.value)
+    assert "offset 600" in message
+    assert "重试 3 次仍失败" in message
+    assert "tls handshake eof" in message
+    assert len(calls) == 3
+    assert capsys.readouterr().err.count("瞬时错误") == 2
+
+
+def test_fetch_threads_page_does_not_retry_business_error(monkeypatch):
+    """业务错误（4xx/参数错）不重试：只调一次、不 sleep、立即抛出。"""
+    calls: list[int] = []
+    sleeps: list[float] = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(1)
+        return _FakeCompleted("", returncode=2, stderr="HTTP 400 Bad Request: invalid offset")
+
+    monkeypatch.setattr(extract_today.subprocess, "run", fake_run)
+    monkeypatch.setattr(extract_today.time, "sleep", sleeps.append)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        extract_today.fetch_threads_page(200)
+    assert "offset 200" in str(excinfo.value)
+    assert len(calls) == 1
+    assert sleeps == []
 
 
 # ── 归类审查表渲染 ─────────────────────────────────────────────────────────
