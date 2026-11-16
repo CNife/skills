@@ -37,9 +37,11 @@ Output（--check）: 每行 <thread_id>\t<CST 时间>\t<in|out|unparseable>，�
 
 import argparse
 import json
+import random
 import re
 import subprocess
 import sys
+import time
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -90,6 +92,12 @@ NMEM_PAGE_LIMIT = 200
 MAX_PAGES = 100
 STUB_MESSAGE_THRESHOLD = 10
 NMEM_TIMEOUT_SECONDS = 30
+
+# nmem 翻页的瞬时错误重试：只认网络层的这几类，业务错误（4xx、参数错、
+# 返回结构不对）立即失败，不把一次坏配置拖成 3 倍等待。
+NMEM_RETRY_ATTEMPTS = 3
+NMEM_RETRY_DELAY_SECONDS = (3.0, 5.0)
+NMEM_TRANSIENT_ERROR_PATTERNS = ("connecting to", "timeout", "tls handshake eof", "error sending request")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -332,8 +340,14 @@ def partition_threads(
 # ── nmem 读取 ─────────────────────────────────────────────────────────────
 
 
-def fetch_threads_page(offset: int, limit: int = NMEM_PAGE_LIMIT) -> list[dict]:
-    """取 nmem 线程列表的一页；CLI 失败抛 RuntimeError（nmem 不可用时必须硬停）。"""
+def _nmem_error_is_transient(reason: str) -> bool:
+    """瞬时网络错误才重试；4xx/参数错/结构不对这类业务错误不重试。"""
+    lowered = reason.lower()
+    return any(pattern in lowered for pattern in NMEM_TRANSIENT_ERROR_PATTERNS)
+
+
+def _fetch_threads_page_once(offset: int, limit: int) -> tuple[list[dict] | None, tuple[str, bool] | None]:
+    """取一页；成功返回 (threads, None)，失败返回 (None, (原因, 是否瞬时))。"""
     try:
         proc = subprocess.run(
             ["nmem", "threads", "list", "--limit", str(limit), "--offset", str(offset), "--json"],
@@ -342,15 +356,50 @@ def fetch_threads_page(offset: int, limit: int = NMEM_PAGE_LIMIT) -> list[dict]:
             timeout=NMEM_TIMEOUT_SECONDS,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"nmem threads list 不可用（offset {offset}）：{exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        return None, (f"超时 {NMEM_TIMEOUT_SECONDS}s：{exc}", True)
+    except OSError as exc:
+        reason = f"无法执行 nmem：{exc}"
+        return None, (reason, _nmem_error_is_transient(reason))
     if proc.returncode != 0:
-        raise RuntimeError(f"nmem threads list 失败（offset {offset}）：{proc.stderr.strip()[:200]}")
+        detail = proc.stderr.strip()[:200] or f"退出码 {proc.returncode}"
+        reason = f"nmem threads list 失败：{detail}"
+        return None, (reason, _nmem_error_is_transient(reason))
     try:
         data = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"nmem threads list 输出不是合法 JSON（offset {offset}）") from exc
-    return data.get("threads", []) if isinstance(data, dict) else data
+    except json.JSONDecodeError:
+        return None, ("nmem threads list 输出不是合法 JSON", False)
+    threads = data.get("threads", []) if isinstance(data, dict) else data
+    if not isinstance(threads, list):
+        return None, ("nmem threads list 输出结构不对：threads 不是列表", False)
+    return threads, None
+
+
+def fetch_threads_page(offset: int, limit: int = NMEM_PAGE_LIMIT) -> list[dict]:
+    """取 nmem 线程列表的一页；CLI 失败抛 RuntimeError（nmem 不可用时必须硬停）。
+
+    只对瞬时网络错误（见 NMEM_TRANSIENT_ERROR_PATTERNS）重试，最多
+    NMEM_RETRY_ATTEMPTS 次，间隔随机落在 NMEM_RETRY_DELAY_SECONDS 内；
+    业务错误立即抛出，重试过程逐次记一行到 stderr。
+    """
+    last_reason = ""
+    for attempt in range(1, NMEM_RETRY_ATTEMPTS + 1):
+        threads, failure = _fetch_threads_page_once(offset, limit)
+        if failure is None:
+            return threads  # type: ignore[return-value]
+        last_reason, transient = failure
+        if not transient:
+            raise RuntimeError(f"nmem threads list 失败（offset {offset}）：{last_reason}")
+        if attempt == NMEM_RETRY_ATTEMPTS:
+            break
+        delay = random.uniform(*NMEM_RETRY_DELAY_SECONDS)
+        print(
+            f"[extract_today] nmem threads list 瞬时错误（offset {offset}，"
+            f"第 {attempt}/{NMEM_RETRY_ATTEMPTS} 次尝试）：{last_reason}；{delay:.1f}s 后重试",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
+    raise RuntimeError(f"nmem threads list 失败（offset {offset}，重试 {NMEM_RETRY_ATTEMPTS} 次仍失败）：{last_reason}")
 
 
 def scan_threads() -> tuple[list[dict], int]:
