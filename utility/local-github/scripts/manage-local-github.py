@@ -6,12 +6,13 @@
 """管理本地 GitHub 参考库。
 
 子命令：
-  sync    抓取全部仓库，工作区干净且有上游的做当前分支快进合并（默认）
-  clone   按 属主/仓库名 克隆一个仓库到参考库
-  ensure  给出本地副本路径：缺则克隆，--fresh 时先抓取再快进
-  path    只查本地副本路径，不联网
-  list    按上次更新时间列出各仓库，附带命名问题
-  rename  把裸名目录规范为 属主@仓库名
+  sync       抓取全部仓库：浅副本先补史，有上游的做当前分支快进（默认）
+  clone      按 属主/仓库名 浅克隆一个仓库到参考库
+  ensure     给出本地副本路径：缺则浅克隆，--fresh 时先补史并快进
+  path       只查本地副本路径，不联网
+  unshallow  补全指定仓库（或全部浅副本）的历史，不刷新代码
+  list       按上次更新时间列出各仓库，标注浅副本与命名问题
+  rename     把裸名目录规范为 属主@仓库名
 
 参考库根目录取环境变量 LOCAL_GITHUB_ROOT，默认 ~/github。
 """
@@ -26,8 +27,9 @@ import signal
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(os.environ.get("LOCAL_GITHUB_ROOT") or Path.home() / "github").expanduser()
 _use_color = sys.stdout.isatty()
@@ -102,60 +104,150 @@ def naming_warn(d: Path) -> list[str]:
     return [f"命名不规范，应为 {expected}"]
 
 
-def refresh(d: Path) -> tuple[str, str, list[str]]:
-    """抓取并快进当前分支。返回 (状态, 说明, 警告)。"""
-    warns = naming_warn(d)
+def run_stream(cmd: list[str]) -> tuple[int, str]:
+    """运行 git 并把 stderr 直通终端，让 git 自己画进度。返回 (退出码, stdout)。"""
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None, text=True, check=False)
+    return p.returncode, p.stdout
 
-    rc, _, err = run(["git", "-C", str(d), "fetch", "--prune", "origin"])
-    if rc != 0:
-        return "失败", last_line(err) or "fetch 失败", warns
+
+def is_shallow(d: Path) -> bool:
+    _, out, _ = run(["git", "-C", str(d), "rev-parse", "--is-shallow-repository"])
+    return out.strip() == "true"
+
+
+def deepen_cmd(d: Path) -> list[str]:
+    """补史命令：当前分支 + 全部 tag 的完整历史。"""
+    return ["git", "-C", str(d), "fetch", "--unshallow", "--tags", "--prune", "origin"]
+
+
+def deepen(d: Path, *, stream: bool = False) -> str | None:
+    """把浅副本补成完整历史（当前分支 + 全部 tag）。返回失败原因，成功返回 None。
+
+    失败不阻断刷新：调用方退化回普通抓取。``stream`` 让 git 自己向终端画进度，
+    此时错误已经由 git 直接输出，只回一句可打印的原因。
+    """
+    if stream:
+        rc, _ = run_stream(deepen_cmd(d))
+        return None if rc == 0 else "git 已报错"
+    rc, _, err = run(deepen_cmd(d))
+    return None if rc == 0 else last_line(err) or "未知错误"
+
+
+class Refresh(NamedTuple):
+    """一次刷新的结果：状态、说明、警告，以及本次是否补了史。"""
+
+    status: str
+    note: str
+    warns: list[str]
+    deepened: bool = False
+
+
+def refresh(d: Path, *, unshallow: bool = True) -> Refresh:
+    """补史（浅副本）、抓取、在不冲突时快进当前分支。"""
+    warns = naming_warn(d)
+    notes: list[str] = []
+    deepened = False
+
+    if unshallow and is_shallow(d):
+        failure = deepen(d)
+        if failure is None:
+            notes.append("已补史")
+            deepened = True
+        else:
+            notes.append(f"补史失败：{failure}")
+
+    if not deepened:
+        rc, _, err = run(["git", "-C", str(d), "fetch", "--prune", "origin"])
+        if rc != 0:
+            return Refresh("失败", join_notes([*notes, last_line(err) or "fetch 失败"]), warns)
 
     _, branch, _ = run(["git", "-C", str(d), "branch", "--show-current"])
     if not branch.strip():
-        return "跳过", "分离 HEAD", warns
-
-    _, out, _ = run(["git", "-C", str(d), "status", "--porcelain"])
-    if out.strip():
-        return "跳过", "工作区脏", warns
+        return Refresh("跳过", join_notes([*notes, "分离 HEAD"]), warns, deepened)
 
     rc, _, _ = run(["git", "-C", str(d), "rev-parse", "--abbrev-ref", "@{upstream}"])
     if rc != 0:
-        return "跳过", "无上游", warns
+        return Refresh("跳过", join_notes([*notes, "无上游"]), warns, deepened)
 
     _, before, _ = run(["git", "-C", str(d), "rev-parse", "HEAD"])
-    rc, _, _ = run(["git", "-C", str(d), "merge", "--ff-only"])
+    rc, _, err = run(["git", "-C", str(d), "merge", "--ff-only"])
     if rc != 0:
-        return "跳过", "无法快进", warns
+        _, ahead, _ = run(["git", "-C", str(d), "rev-list", "--count", "@{upstream}..HEAD"])
+        ahead = ahead.strip()
+        if ahead and ahead != "0":
+            reason = f"本地领先 {ahead} 个提交，未快进"
+        elif "would be overwritten" in err:
+            reason = "本地改动挡住更新"
+        else:
+            reason = last_line(err) or "无法快进"
+        return Refresh("跳过", join_notes([*notes, reason]), warns, deepened)
     _, after, _ = run(["git", "-C", str(d), "rev-parse", "HEAD"])
 
     if before.strip() == after.strip():
-        return "已最新", "", warns
-    return "已更新", f"{before.strip()[:8]} → {after.strip()[:8]}", warns
+        return Refresh("已最新", join_notes(notes), warns, deepened)
+    return Refresh("已更新", join_notes([f"{before.strip()[:8]} → {after.strip()[:8]}", *notes]), warns, deepened)
 
 
 def join_notes(parts: list[str]) -> str:
     return "；".join(x for x in parts if x)
 
 
-def cmd_sync() -> int:
+class Progress:
+    """终端单行进度：原地刷新已完成数，收尾时清掉这一行。"""
+
+    def __init__(self, total: int) -> None:
+        self.total = total
+        self.done = 0
+        self.width = 0
+
+    def tick(self, name: str) -> None:
+        self.done += 1
+        line = f"同步 {self.done}/{self.total}：{name}"
+        pad = max(0, self.width - len(line))
+        sys.stderr.write("\r" + line + " " * pad)
+        sys.stderr.flush()
+        self.width = max(self.width, len(line))
+
+    def clear(self) -> None:
+        if self.width:
+            sys.stderr.write("\r" + " " * self.width + "\r")
+            sys.stderr.flush()
+
+
+def cmd_sync(keep_shallow: bool) -> int:
     repos = list_repos()
     if not repos:
         print("参考库为空")
         return 0
+    progress = Progress(len(repos)) if sys.stderr.isatty() else None
+    results: list[tuple[Path, Refresh]] = []
     with ThreadPoolExecutor(max_workers=8) as ex:
-        results = list(ex.map(refresh, repos))
-    rows = [(d.name, *r) for d, r in zip(repos, results, strict=True)]
+        futures = {ex.submit(refresh, d, unshallow=not keep_shallow): d for d in repos}
+        for fut in as_completed(futures):
+            d = futures[fut]
+            results.append((d, fut.result()))
+            if progress:
+                progress.tick(d.name)
+    if progress:
+        progress.clear()
+    rows = sorted((d.name, *r) for d, r in results)
     width = max(len(r[0]) for r in rows)
     counts: dict[str, int] = {}
-    for name, status, note, warns in rows:
+    deepened = 0
+    for name, status, note, warns, was_deepened in rows:
         counts[status] = counts.get(status, 0) + 1
+        if was_deepened:
+            deepened += 1
         styled = {"已更新": green(status), "已最新": dim(status), "失败": red(status)}.get(status, yellow(status))
         line = f"{name.ljust(width)}  {styled}"
         detail = join_notes([note, *warns])
         if detail:
             line += f"  {detail}"
         print(line)
-    print("  ".join(f"{k}:{v}" for k, v in counts.items()))
+    summary = "  ".join(f"{k}:{counts[k]}" for k in ("已更新", "已最新", "跳过", "失败") if k in counts)
+    if deepened:
+        summary += f"  补史:{deepened}"
+    print(summary)
     return 0
 
 
@@ -205,12 +297,14 @@ def clone_repo(owner: str, repo: str) -> tuple[Path, bool, list[str]]:
 
     gh = shutil.which("gh")
     if gh:
-        rc, _, _ = run([gh, "repo", "clone", f"{owner}/{repo}", str(target)])
+        rc, _, _ = run([gh, "repo", "clone", f"{owner}/{repo}", str(target), "--", "--depth", "1", "--no-tags"])
         if rc == 0:
             return target, True, notes
         notes.append("gh repo clone 失败，退回 git clone")
 
-    rc, _, err = run(["git", "clone", f"https://github.com/{owner}/{repo}.git", str(target)])
+    rc, _, err = run(
+        ["git", "clone", "--depth", "1", "--no-tags", f"https://github.com/{owner}/{repo}.git", str(target)]
+    )
     if rc != 0:
         raise CloneError(last_line(err) or "未知错误")
     return target, True, notes
@@ -253,7 +347,7 @@ def cmd_ensure(spec: str, fresh: bool) -> int:
             print(red(f"克隆失败：{e}"), file=sys.stderr)
             return 1
     elif fresh:
-        status, note, warns = refresh(target)
+        status, note, warns, _ = refresh(target)
         if status != "已最新":
             notes = [f"{status}：{note}" if note else status, *warns]
     for note in notes:
@@ -272,6 +366,43 @@ def cmd_path(spec: str) -> int:
         return 1
     print(target)
     return 0
+
+
+def cmd_unshallow(specs: list[str], all_: bool) -> int:
+    """补全浅副本的历史（当前分支 + 全部 tag），不刷新代码。"""
+    if all_:
+        targets = [d for d in list_repos() if is_shallow(d)]
+        if not targets:
+            print("没有浅副本")
+            return 0
+    else:
+        if not specs:
+            print(red("用法：unshallow <仓库>... 或 unshallow --all"), file=sys.stderr)
+            return 2
+        targets = []
+        for spec in specs:
+            parsed = parse_or_fail(spec)
+            if not parsed:
+                return 2
+            target = find_repo(*parsed)
+            if target is None:
+                print(red(f"参考库没有 {parsed[0]}/{parsed[1]}：{ROOT}"), file=sys.stderr)
+                return 1
+            targets.append(target)
+
+    failed = 0
+    for d in targets:
+        if not is_shallow(d):
+            print(dim(f"{d.name} 已是全量"))
+            continue
+        print(f"补全 {d.name} 的历史…", file=sys.stderr)
+        if deepen(d, stream=True) is not None:
+            print(red(f"{d.name} 补史失败"), file=sys.stderr)
+            failed += 1
+            continue
+        _, count, _ = run(["git", "-C", str(d), "rev-list", "--count", "HEAD"])
+        print(f"{d.name}  已补史（{count.strip()} 个提交）")
+    return 1 if failed else 0
 
 
 def last_update(d: Path) -> float | None:
@@ -299,11 +430,13 @@ def cmd_list() -> int:
     if not repos:
         print("参考库为空")
         return 0
-    rows = [(d.name, last_update(d), naming_warn(d)) for d in repos]
+    rows = [(d.name, last_update(d), naming_warn(d), is_shallow(d)) for d in repos]
     rows.sort(key=lambda r: r[1] or 0)
     width = max(len(r[0]) for r in rows)
-    for name, fetched, warns in rows:
+    for name, fetched, warns, shallow in rows:
         line = f"{name.ljust(width)}  {ago(fetched).rjust(9)}"
+        if shallow:
+            line += "  " + yellow("浅")
         detail = join_notes(warns)
         if detail:
             line += f"  {yellow(detail)}"
@@ -343,25 +476,33 @@ def main() -> int:
         prog="manage-local-github.py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     sub = p.add_subparsers(dest="cmd")
-    sub.add_parser("sync", help="抓取全部仓库并快进当前分支（默认）")
-    pc = sub.add_parser("clone", help="克隆仓库到 属主@仓库名 目录")
+    ps = sub.add_parser("sync", help="抓取全部仓库并快进当前分支（默认）；浅副本先补史")
+    ps.add_argument("--keep-shallow", action="store_true", help="本次跳过补史，只推进浅副本的 tip")
+    pc = sub.add_parser("clone", help="浅克隆仓库到 属主@仓库名 目录")
     pc.add_argument("repo", help="属主/仓库名（也接受 属主@仓库名 或 GitHub 地址）")
     pe = sub.add_parser("ensure", help="给出本地副本路径，缺则克隆（stdout 只有路径）")
     pe.add_argument("repo", help="属主/仓库名（也接受 属主@仓库名 或 GitHub 地址）")
-    pe.add_argument("--fresh", action="store_true", help="先抓取并快进，副本仍不可刷新时只提示")
+    pe.add_argument("--fresh", action="store_true", help="先补史并快进，副本仍不可刷新时只提示")
     pp = sub.add_parser("path", help="只查本地副本路径，不联网")
     pp.add_argument("repo", help="属主/仓库名（也接受 属主@仓库名 或 GitHub 地址）")
-    sub.add_parser("list", help="按上次更新时间列出各仓库")
+    pu = sub.add_parser("unshallow", help="补全指定仓库（或 --all 全部浅副本）的历史，不刷新代码")
+    pu.add_argument("repos", nargs="*", metavar="仓库", help="属主/仓库名（也接受 属主@仓库名 或 GitHub 地址）")
+    pu.add_argument("--all", action="store_true", dest="all_repos", help="补全参考库内全部浅副本")
+    sub.add_parser("list", help="按上次更新时间列出各仓库，标注浅副本")
     sub.add_parser("rename", help="把裸名目录规范为 属主@仓库名")
     args = p.parse_args()
-    if args.cmd in (None, "sync"):
-        return cmd_sync()
+    if args.cmd == "sync":
+        return cmd_sync(args.keep_shallow)
+    if args.cmd is None:
+        return cmd_sync(False)
     if args.cmd == "clone":
         return cmd_clone(args.repo)
     if args.cmd == "ensure":
         return cmd_ensure(args.repo, args.fresh)
     if args.cmd == "path":
         return cmd_path(args.repo)
+    if args.cmd == "unshallow":
+        return cmd_unshallow(args.repos, args.all_repos)
     if args.cmd == "list":
         return cmd_list()
     if args.cmd == "rename":
